@@ -6,7 +6,7 @@
 #define ISR_PERIOD_US 100
 
 int pulse_index, cycles_remaining;
-int pattern[] = {100, 100};
+int pattern[] = {200, 200};
 int pattern_length = sizeof(pattern) / sizeof(pattern[0]);
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -14,7 +14,7 @@
 #define READING_PERIOD_US 1000
 #define RECV_BUFFER_SIZE 600
 
-#define HANDSHAKE_MIN_PULSES 20
+#define HANDSHAKE_MIN_PULSES 4
 
 ////////////////////////////////////////////////////////////////////////////////
 // ERROR CODES
@@ -247,10 +247,36 @@ int DetectHandshake(int split) {
   return round(avg);
 }
 
+void StopCollection() {
+  Timer1.detachInterrupt();
+}
+
+void ClearBufferAndRestartCollection() {
+  recv_buf.clear_no_memset();  // This was a hack added by me into their lib
+  Timer1.setPeriod(READING_PERIOD_US);
+  Timer1.attachInterrupt(TakeReading);
+}
+
 void Receive(int bit_length) {
-  Serial.println(F("Finding bit boundaries..."));
+  ClearBufferAndRestartCollection();
+
+  Serial.println(F("Aligning readings with bit boundaries in handshake..."));
+  // TODO: This seems somewhat naive to just assume the first edge I see is
+  // well aligned.  Perhaps if I looked for several edges I could do better?
+  int reading, value = -1;
+  while (reading == value || value == -1) {
+    noInterrupts();
+    int reading = recv_buf.shift();
+    interrupts();
+    if (reading == -1) {
+      value = reading;
+    } else if (reading == value) {
+
+    }
+  }
 
   Serial.println(F("Waiting to receive data..."));
+  StopCollection();
 }
 
 void setup() {
@@ -260,14 +286,13 @@ void setup() {
   digitalWrite(ERROR_LED_PIN, LOW);
 
   Timer1.initialize();
-  Timer1.setPeriod(READING_PERIOD_US);
-  Timer1.attachInterrupt(TakeReading);
+  ClearBufferAndRestartCollection();
 }
 
 void loop() {
   if (recv_buf.isFull()) {
     // Stop the timer from adding more readings while we work
-    Timer1.detachInterrupt();
+    StopCollection();
 
     // Figure out what the "split" is for a 1 or a 0
     int split = ComputeSplit();
@@ -279,7 +304,7 @@ void loop() {
     int bit_length = DetectHandshake(split);
 
     // If a handshake was detected, begin listening for a message
-    if (bit_length <= 0) {
+    if (bit_length <= 1) {
       Serial.print(F(FYEL("Handshake not detected.")));
       Serial.print(F("\treason: "));
       if (bit_length == -ENOTENOUGHPULSES) {
@@ -297,11 +322,9 @@ void loop() {
       Serial.print(bit_length);
       Serial.print(F("\n\r"));
       Serial.println(F(FGRN("Handshake detected!")));
-      Receive(bit_length);
+      //Receive(bit_length);
     }
 
-    // Clear the buffers and reset everything
-    recv_buf.clear_no_memset();  // This was a hack added by me into their lib
-    Timer1.attachInterrupt(TakeReading);
+    ClearBufferAndRestartCollection();
   }
 }
