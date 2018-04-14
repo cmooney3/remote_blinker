@@ -1,7 +1,7 @@
 #!/bin/bash
 
-BOARD="arduino:avr:leonardo"
-PORT="$(ls /dev/ttyACM* | head -n1)"
+BOARD="arduino:avr:uno"
+PORT="$(ls /dev/ttyUSB* | head -n1)"
 ACTION="--upload"
 ARDUINO="arduino"
 INO_LOCATION="./transmitter.ino"

@@ -2,7 +2,7 @@
 #include <limits.h>
 #include <TimerOne.h>
 
-#define LED_PIN 5
+#define LED_PIN 6
 #define BLINK_PERIOD_US 10000
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -12,7 +12,7 @@ void ToggleTransmissionLED() {
   // Using a trick to toggle -- writing a 1 into the PIN register toggles the
   // output for atmel chips.  This could be done with more traditional Arduino
   // calls, but it's faster and exactly what we want to do it this way.
-  PINC = PINC | 0b01000000;
+  PIND = PIND | 0b01000000;
 }
 
 void setup() {
