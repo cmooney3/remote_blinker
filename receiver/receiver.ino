@@ -220,20 +220,20 @@ int DetectHandshake(int split) {
   }
   double std_dev = sqrt(deviations / (double)pulse_lengths.size());
 
-  for (int i = 0 ; i < pulse_lengths.size(); i++) {
-    Serial.print(pulse_lengths.get(i));
-    if (i != pulse_lengths.size() - 1) {
-      Serial.print(", ");
-    }
-  }
-  Serial.print("\n\r");
-  Serial.print("avg: ");
-  Serial.print(avg);
-  Serial.print("\n\r");
-  Serial.print("std dev: ");
-  Serial.print(std_dev);
-  Serial.print("\n\r");
-  Serial.println("---");
+  //for (int i = 0 ; i < pulse_lengths.size(); i++) {
+  //  Serial.print(pulse_lengths.get(i));
+  //  if (i != pulse_lengths.size() - 1) {
+  //    Serial.print(", ");
+  //  }
+  //}
+  //Serial.print("\n\r");
+  //Serial.print("avg: ");
+  //Serial.print(avg);
+  //Serial.print("\n\r");
+  //Serial.print("std dev: ");
+  //Serial.print(std_dev);
+  //Serial.print("\n\r");
+  //Serial.println("---");
 
   // A high standard deviation means that the pulses were or varying widths,
   // and therefor, not a handshake.  They must be very precisely timed or
@@ -270,10 +270,9 @@ int BlockForNextReading() {
 }
 
 void Receive(int bit_length, int split) {
-  Serial.println(F("In receive"));
   ClearBufferAndRestartCollection();
 
-  Serial.println(F("Aligning readings with bit boundaries in handshake..."));
+  Serial.print(F("Aligning readings with bit boundaries in handshake..."));
   // TODO: This seems somewhat naive to just assume the first edge I see is
   // well aligned.  Perhaps if I looked for several edges I could do better?
   int reading, conv, value = -1;
@@ -288,11 +287,15 @@ void Receive(int bit_length, int split) {
   noInterrupts();
   recv_buf.unshift(reading);
   interrupts();
+  Serial.print(F(FGRN("\tDONE\n\r")));
+
+  // Now wait until the data actually starts to arrive
+  // TODO: Wait for start-of-data message
 
   // Collect the actual bits themselves.
   // TODO: This is also somewhat naive, just reading in the bit blindly, without
   // ever realigning.
-  Serial.println(F("Waiting to receive data..."));
+  Serial.println(F("Receiving data..."));
   for (int i = 0; i < 10; i++) {
     int val = 0;
     for (int bit = 0; bit < 8; bit++) {
@@ -306,12 +309,9 @@ void Receive(int bit_length, int split) {
         val |= 1;
       }
     }
-    Serial.print(val);
-    if (i != 9) {
-      Serial.print(", ");
-    }
+    Serial.print(F("."));
   }
-  Serial.print("\n\r ");
+  Serial.print(F("\n\r"));
   StopCollection();
 }
 
@@ -354,10 +354,10 @@ void loop() {
       }
       Serial.print(F("\n\r"));
     } else {
-      Serial.print(F("Bit Length = "));
+      Serial.print(F(FGRN("Handshake detected!")));
+      Serial.print(F("\t(bit length: "));
       Serial.print(bit_length);
-      Serial.print(F("\n\r"));
-      Serial.println(F(FGRN("Handshake detected!")));
+      Serial.print(F(")\n\r"));
       Receive(bit_length, split);
     }
 
