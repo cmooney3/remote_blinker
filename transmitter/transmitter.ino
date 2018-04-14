@@ -3,7 +3,7 @@
 #include <TimerOne.h>
 
 #define LED_PIN 5
-#define BLINK_PERIOD_US 100000
+#define BLINK_PERIOD_US 10000
 
 ////////////////////////////////////////////////////////////////////////////////
 // PERIODIC ISR TO CREATE BLINKS

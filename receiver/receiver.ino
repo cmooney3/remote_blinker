@@ -103,13 +103,6 @@ void KmeansOnWorkBuffer(int k, int *means) {
     }
   } while(!same_means_as_last_time);
 
-  Serial.print("Selected centroids: ");
-  for (int i = 0; i < k; i++) {
-    Serial.print(means[i]);
-    Serial.print("\t");
-  }
-  Serial.print("\n\r");
-
   free(totals);
   free(counts);
 }
@@ -136,6 +129,9 @@ void setup() {
 }
 
 void DrainReceiveBuffer() {
+  // Empty any data sitting in the receive buffer into the work buffer one
+  // at a time.  Since the receive buffer is filled by a Timer1 ISR, we have
+  // to disable interrupts briefly when copying a value over.
   while (!recv_buf.isEmpty()) {
     noInterrupts();
     work_buf.push(recv_buf.shift());
@@ -144,6 +140,8 @@ void DrainReceiveBuffer() {
 }
 
 int ComputeSplitFromWorkBuffer() {
+  // Using Kmeans, find a reasonable "split" light level to determine
+  // if the incoming bit is a 1 or a 0.
   int *means = (int *)malloc(2 * sizeof(int));
   KmeansOnWorkBuffer(2, means);
   int split = (means[0] + means[1]) / 2;
@@ -156,20 +154,34 @@ void loop() {
     DrainReceiveBuffer();
 
     if (work_buf.isFull()) {
-      Serial.print("\n\r");
-      for (int i = 0; i < WORK_BUFFER_SIZE; i++) {
-        Serial.print(work_buf[i]);
-        Serial.print("\t");
+      int split = ComputeSplitFromWorkBuffer();
+
+      bool is_one = work_buf[0] >= split;
+      int bit_length = 0;
+      for (int i = 0; i < work_buf.size(); i++) {
+        if(work_buf[i] >= split) {
+          if (is_one) {
+            bit_length++;
+          } else {
+            Serial.print(bit_length);
+            Serial.print(" ");
+            bit_length = 1;
+          }
+          is_one = true;
+        } else {
+          if (!is_one) {
+            bit_length++;
+          } else {
+            Serial.print(bit_length);
+            Serial.print(" ");
+            bit_length = 1;
+          }
+          is_one = false;
+        }
       }
       Serial.print("\n\r");
 
-      int split = ComputeSplitFromWorkBuffer();
-      Serial.print("split: ");
-      Serial.print(split);
-      Serial.print("\n\r");
-
-      Serial.println("----");
-      work_buf.clear();
+      work_buf.clear_no_memset();  // This was a hack added by me into their lib
     }
   }
 }
