@@ -61,23 +61,14 @@ void KmeansSelectStartingCentroids(int k, int* means) {
   }
 }
 
-void KmeansOnWorkBuffer(int k) {
-  int *means = (int *)malloc(k * sizeof(int));
+void KmeansOnWorkBuffer(int k, int *means) {
   long *totals = (long *)malloc(k * sizeof(long));
   int *counts = (int *)malloc(k * sizeof(int));
 
   KmeansSelectStartingCentroids(k, means);
 
   int same_means_as_last_time;
-  int step = 0;
   do {
-    Serial.print(++step);
-    Serial.print(":  ");
-    for (int i = 0; i < k; i++) {
-      Serial.print(means[i]);
-      Serial.print("\t");
-    }
-    Serial.print("\n\r");
     // Recompute the means by going through all the values and seeing which
     // cluster they're closest to.  Then recompute the mean of each cluster
     // to hopefully move it to a more representative center point.
@@ -118,10 +109,7 @@ void KmeansOnWorkBuffer(int k) {
     Serial.print("\t");
   }
   Serial.print("\n\r");
-  delay(1000);
 
-
-  free(means);
   free(totals);
   free(counts);
 }
@@ -147,26 +135,27 @@ void setup() {
   Timer1.attachInterrupt(TakeReading); 
 }
 
-bool DrainReceiveBuffer() {
-  bool work_buf_full = false;
+void DrainReceiveBuffer() {
   while (!recv_buf.isEmpty()) {
     noInterrupts();
-    work_buf_full |= !work_buf.push(recv_buf.shift());
+    work_buf.push(recv_buf.shift());
     interrupts();
   }
-  return work_buf_full;
+}
+
+int ComputeSplitFromWorkBuffer() {
+  int *means = (int *)malloc(2 * sizeof(int));
+  KmeansOnWorkBuffer(2, means);
+  int split = (means[0] + means[1]) / 2;
+  free(means);
+  return split;
 }
 
 void loop() {
   if (!recv_buf.isEmpty()) {
-    //for (int i = 0; i < recv_buf.size(); i++) {
-    //  Serial.print(recv_buf[i]);
-    //  Serial.print("\t");
-    //}
+    DrainReceiveBuffer();
 
-    bool work_buf_full = DrainReceiveBuffer();
-
-    if (work_buf_full) {
+    if (work_buf.isFull()) {
       Serial.print("\n\r");
       for (int i = 0; i < WORK_BUFFER_SIZE; i++) {
         Serial.print(work_buf[i]);
@@ -174,9 +163,13 @@ void loop() {
       }
       Serial.print("\n\r");
 
-      KmeansOnWorkBuffer(2);
+      int split = ComputeSplitFromWorkBuffer();
+      Serial.print("split: ");
+      Serial.print(split);
+      Serial.print("\n\r");
 
       Serial.println("----");
+      work_buf.clear();
     }
   }
 }
