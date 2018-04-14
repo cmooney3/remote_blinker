@@ -12,8 +12,7 @@
 #define LIGHT_SENSOR_PIN 0
 
 #define READING_PERIOD_US 1000
-#define RECV_BUFFER_SIZE 100
-#define WORK_BUFFER_SIZE 500
+#define RECV_BUFFER_SIZE 600
 
 #define HANDSHAKE_MIN_PULSES 20
 
@@ -50,7 +49,6 @@
 // CIRCUILAR BUFFERS SETUP
 ////////////////////////////////////////////////////////////////////////////////
 CircularBuffer<int, RECV_BUFFER_SIZE> recv_buf;
-CircularBuffer<int, WORK_BUFFER_SIZE> work_buf;
 
 ////////////////////////////////////////////////////////////////////////////////
 // K-MEANS TO DETECT BIMODAL LEVELS (ADJUSTING FOR LIGHT CONDITIONS)
@@ -62,15 +60,15 @@ int KmeansDistance(int v1, int v2) {
 void KmeansSelectStartingCentroids(int k, int* means) {
   // Select k random starting centroids as the initial means.  The subsequent
   // centroids are weighted to not be near the initial ones.
-  means[0] = work_buf[random(work_buf.size())];
+  means[0] = recv_buf[random(recv_buf.size())];
   for (int cluster = 1; cluster < k; cluster++) {
     long total_weights = 0;
 
-    for (int i = 0; i < work_buf.size(); i++) {
+    for (int i = 0; i < recv_buf.size(); i++) {
       int closest_distance = INT_MAX;
       int d;
       for (int existing_cluster = 0; existing_cluster < cluster; existing_cluster++) {
-        d = KmeansDistance(work_buf[i], means[existing_cluster]); 
+        d = KmeansDistance(recv_buf[i], means[existing_cluster]); 
         if (d < closest_distance) {
           closest_distance = d;
         }
@@ -80,25 +78,25 @@ void KmeansSelectStartingCentroids(int k, int* means) {
 
     int selection = random(total_weights);
 
-    for (int i = 0; i < work_buf.size(); i++) {
+    for (int i = 0; i < recv_buf.size(); i++) {
       int closest_distance = INT_MAX;
       int d;
       for (int existing_cluster = 0; existing_cluster < cluster; existing_cluster++) {
-        d = KmeansDistance(work_buf[i], means[existing_cluster]); 
+        d = KmeansDistance(recv_buf[i], means[existing_cluster]); 
         if (d < closest_distance) {
           closest_distance = d;
         }
       }
       total_weights -= closest_distance * closest_distance;
       if (total_weights <= selection) {
-        means[cluster] = work_buf[i];
+        means[cluster] = recv_buf[i];
         break;
       }
     }
   }
 }
 
-void KmeansOnWorkBuffer(int k, int *means) {
+void Kmeans(CircularBuffer<int, RECV_BUFFER_SIZE>* buf, int k, int *means) {
   long *totals = (long *)malloc(k * sizeof(long));
   int *counts = (int *)malloc(k * sizeof(int));
 
@@ -112,12 +110,12 @@ void KmeansOnWorkBuffer(int k, int *means) {
     for (int i = 0; i < k; i++) {
       totals[i] = counts[i] = 0;
     }
-    for (int i = 0; i < work_buf.size(); i++) {
+    for (int i = 0; i < buf->size(); i++) {
       // Determine which cluster this item is closest to
       int closest_cluster = INT_MAX;
       int closest_cluster_distance = INT_MAX;
       for (int cluster = 0; cluster < k; cluster++) {
-        int distance = KmeansDistance(work_buf[i], means[cluster]); 
+        int distance = KmeansDistance((*buf)[i], means[cluster]); 
         if (distance < closest_cluster_distance) {
           closest_cluster = cluster; 
           closest_cluster_distance = distance;
@@ -126,7 +124,7 @@ void KmeansOnWorkBuffer(int k, int *means) {
 
       // Update the values for the closest cluster
       counts[closest_cluster]++;
-      totals[closest_cluster] += work_buf[i];
+      totals[closest_cluster] += (*buf)[i];
     }
 
     // Having finished with all the items, we now compute the new means
@@ -157,22 +155,11 @@ void TakeReading() {
 ////////////////////////////////////////////////////////////////////////////////
 // HIGH LEVEL FUNCTIONALITY
 ////////////////////////////////////////////////////////////////////////////////
-void DrainReceiveBuffer() {
-  // Empty any data sitting in the receive buffer into the work buffer one
-  // at a time.  Since the receive buffer is filled by a Timer1 ISR, we have
-  // to disable interrupts briefly when copying a value over.
-  while (!recv_buf.isEmpty()) {
-    noInterrupts();
-    work_buf.push(recv_buf.shift());
-    interrupts();
-  }
-}
-
-int ComputeSplitFromWorkBuffer() {
+int ComputeSplit() {
   // Using Kmeans, find a reasonable "split" light level to determine
   // if the incoming bit is a 1 or a 0.
   int *means = (int *)malloc(2 * sizeof(int));
-  KmeansOnWorkBuffer(2, means);
+  Kmeans(&recv_buf, 2, means);
   int split = (means[0] + means[1]) / 2;
   free(means);
   return split;
@@ -182,11 +169,11 @@ int DetectHandshake(int split) {
   // First go through the working buffer and categorize each reading as a
   // zero or a one.  While doing this, the length of each pulse (all
   // contiguous ones or zeros) and store them in order, in a linked list.
-  bool is_one = work_buf[0] >= split;
+  bool is_one = recv_buf[0] >= split;
   int bit_length = 0;
   LinkedList<int> pulse_lengths;
-  for (int i = 0; i < work_buf.size(); i++) {
-    if (work_buf[i] >= split) {
+  for (int i = 0; i < recv_buf.size(); i++) {
+    if (recv_buf[i] >= split) {
       if (is_one) {
         bit_length++;
       } else {
@@ -233,11 +220,9 @@ int DetectHandshake(int split) {
   }
   double std_dev = sqrt(deviations / (double)pulse_lengths.size());
 
-  while (pulse_lengths.size() > 0) {
-    int len = pulse_lengths.shift();
-    Serial.print(len);
-
-    if (pulse_lengths.size() > 0) {
+  for (int i = 0 ; i < pulse_lengths.size(); i++) {
+    Serial.print(pulse_lengths.get(i));
+    if (i != pulse_lengths.size() - 1) {
       Serial.print(", ");
     }
   }
@@ -262,6 +247,12 @@ int DetectHandshake(int split) {
   return round(avg);
 }
 
+void Receive(int bit_length) {
+  Serial.println(F("Finding bit boundaries..."));
+
+  Serial.println(F("Waiting to receive data..."));
+}
+
 void setup() {
   Serial.begin(BAUD_RATE);
 
@@ -274,41 +265,43 @@ void setup() {
 }
 
 void loop() {
-  if (!recv_buf.isEmpty()) {
-    DrainReceiveBuffer();
+  if (recv_buf.isFull()) {
+    // Stop the timer from adding more readings while we work
+    Timer1.detachInterrupt();
 
-    if (work_buf.isFull()) {
-      // Figure out what the "split" is for a 1 or a 0
-      int split = ComputeSplitFromWorkBuffer();
+    // Figure out what the "split" is for a 1 or a 0
+    int split = ComputeSplit();
 
-      // Using that "split", check to see if the log is full of equally-long
-      // 0101010101 pattern.  This serves as the handshake and configures the
-      // bit length.  That value is measured in the number of readings taken,
-      // not directly as microseconds or something like that.
-      int bit_length = DetectHandshake(split);
+    // Using that "split", check to see if the log is full of equally-long
+    // 0101010101 pattern.  This serves as the handshake and configures the
+    // bit length.  That value is measured in the number of readings taken,
+    // not directly as microseconds or something like that.
+    int bit_length = DetectHandshake(split);
 
-      // If a handshake was detected, begin listening for a message
-      if (bit_length <= 0) {
-        Serial.print(F(FYEL("Handshake not detected.")));
-        Serial.print(F("\treason: "));
-        if (bit_length == -ENOTENOUGHPULSES) {
-            Serial.print(F("Not enough pulses detected."));
-        } else if (bit_length = -EHIGHSTDDEV) {
-            Serial.print(F("Pulse lengths varied too much."));
-        } else {
-            Serial.print(F("unknown ("));
-            Serial.print(bit_length);
-            Serial.print(F(")"));
-        }
-        Serial.print(F("\n\r"));
+    // If a handshake was detected, begin listening for a message
+    if (bit_length <= 0) {
+      Serial.print(F(FYEL("Handshake not detected.")));
+      Serial.print(F("\treason: "));
+      if (bit_length == -ENOTENOUGHPULSES) {
+          Serial.print(F("Not enough pulses detected."));
+      } else if (bit_length = -EHIGHSTDDEV) {
+          Serial.print(F("Pulse lengths varied too much."));
       } else {
-        Serial.print(F("Bit Length = "));
-        Serial.print(bit_length);
-        Serial.print(F("\n\r"));
-        Serial.println(F(FGRN("Handshake detected!")));
+          Serial.print(F("unknown ("));
+          Serial.print(bit_length);
+          Serial.print(F(")"));
       }
-
-      work_buf.clear_no_memset();  // This was a hack added by me into their lib
+      Serial.print(F("\n\r"));
+    } else {
+      Serial.print(F("Bit Length = "));
+      Serial.print(bit_length);
+      Serial.print(F("\n\r"));
+      Serial.println(F(FGRN("Handshake detected!")));
+      Receive(bit_length);
     }
+
+    // Clear the buffers and reset everything
+    recv_buf.clear_no_memset();  // This was a hack added by me into their lib
+    Timer1.attachInterrupt(TakeReading);
   }
 }
