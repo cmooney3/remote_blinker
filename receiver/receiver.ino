@@ -309,7 +309,8 @@ void Receive(int bit_length, int split) {
         val |= 1;
       }
     }
-    Serial.print(F("."));
+    Serial.print(val, HEX);
+    Serial.print(F(" "));
   }
   Serial.print(F("\n\r"));
   StopCollection();
