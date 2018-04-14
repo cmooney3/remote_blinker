@@ -257,25 +257,61 @@ void ClearBufferAndRestartCollection() {
   Timer1.attachInterrupt(TakeReading);
 }
 
-void Receive(int bit_length) {
+int BlockForNextReading() {
+  int reading;
+
+  while (recv_buf.isEmpty()) { delay(READING_PERIOD_US); };
+
+  noInterrupts();
+  reading = recv_buf.shift();
+  interrupts();
+
+  return reading;
+}
+
+void Receive(int bit_length, int split) {
+  Serial.println(F("In receive"));
   ClearBufferAndRestartCollection();
 
   Serial.println(F("Aligning readings with bit boundaries in handshake..."));
   // TODO: This seems somewhat naive to just assume the first edge I see is
   // well aligned.  Perhaps if I looked for several edges I could do better?
-  int reading, value = -1;
-  while (reading == value || value == -1) {
-    noInterrupts();
-    int reading = recv_buf.shift();
-    interrupts();
-    if (reading == -1) {
-      value = reading;
-    } else if (reading == value) {
-
+  int reading, conv, value = -1;
+  while (conv == value || value == -1) {
+    reading = BlockForNextReading();
+    conv = (reading >= split);
+    if (value == -1) {
+      value = conv;
     }
   }
+  // Unshift the last reading back on (it's the start of a new bit)
+  noInterrupts();
+  recv_buf.unshift(reading);
+  interrupts();
 
+  // Collect the actual bits themselves.
+  // TODO: This is also somewhat naive, just reading in the bit blindly, without
+  // ever realigning.
   Serial.println(F("Waiting to receive data..."));
+  for (int i = 0; i < 10; i++) {
+    int val = 0;
+    for (int bit = 0; bit < 8; bit++) {
+      int total = 0;
+      for (int sample = 0; sample < bit_length; sample++) {
+        reading = BlockForNextReading();
+        total += reading;
+      }
+      val <<= 1;
+      if (total / bit_length > split) {
+        val |= 1;
+      }
+    }
+    Serial.print(val);
+    if (i != 9) {
+      Serial.print(", ");
+    }
+  }
+  Serial.print("\n\r ");
   StopCollection();
 }
 
@@ -322,7 +358,7 @@ void loop() {
       Serial.print(bit_length);
       Serial.print(F("\n\r"));
       Serial.println(F(FGRN("Handshake detected!")));
-      //Receive(bit_length);
+      Receive(bit_length, split);
     }
 
     ClearBufferAndRestartCollection();
