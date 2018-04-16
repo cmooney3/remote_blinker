@@ -2,24 +2,30 @@
 #include <limits.h>
 #include <TimerOne.h>
 
+#define HANDSHAKE_LEN 1000
+
 #define LED_PIN 6
 #define ISR_PERIOD_US 100
 
-int pulse_index, cycles_remaining;
-int pattern[] = {200, 200};
-int pattern_length = sizeof(pattern) / sizeof(pattern[0]);
+#define BIT_LENGTH 210
+
+// Make sure this is the same as in receiver.ino or nothing works!!
+#define DATA_START_MAGIC_NUMBER 0x0F
+
+bool is_handshaking;
+int cycles_remaining, handshake_bit = 0;
 
 ////////////////////////////////////////////////////////////////////////////////
 // PERIODIC ISR TO CREATE BLINKS
 ////////////////////////////////////////////////////////////////////////////////
-void MaybeToggleTransmissionLED() {
+void TimerHandler() {
   if (!cycles_remaining) {
-    // Using a trick to toggle -- writing a 1 into the PIN register toggles the
-    // output for atmel chips.  This could be done with more traditional Arduino
-    // calls, but it's faster and exactly what we want to do it this way.
-    PIND = PIND | 0b01000000;
-    pulse_index = (pulse_index + 1) % pattern_length;
-    cycles_remaining = pattern[pulse_index];
+    if (is_handshaking) {
+      digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+    } else {
+
+    }
+    cycles_remaining = BIT_LENGTH;
   }
   cycles_remaining--;
 }
@@ -28,14 +34,15 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
-  pulse_index = 0;
-  cycles_remaining = pattern[pulse_index];
-
   Timer1.initialize();
   Timer1.setPeriod(ISR_PERIOD_US);
-  Timer1.attachInterrupt(MaybeToggleTransmissionLED);
+  Timer1.attachInterrupt(TimerHandler);
 }
 
 
 void loop() {
+  is_handshaking = true;
+  delay(10000);
+//  is_handshaking = false;;
+//  delay(10000);
 }

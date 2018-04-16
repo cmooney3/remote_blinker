@@ -14,7 +14,11 @@
 #define READING_PERIOD_US 1000
 #define RECV_BUFFER_SIZE 600
 
-#define HANDSHAKE_MIN_PULSES 4
+#define HANDSHAKE_MIN_PULSES 15
+
+// This shouldn't start with 0b01 or 0b10 since that pattern is found in the
+// handshake, and could cause misalignment issues.  Start with 0b00 or 0b11
+#define DATA_START_MAGIC_NUMBER 0x0F
 
 ////////////////////////////////////////////////////////////////////////////////
 // ERROR CODES
@@ -68,7 +72,7 @@ void KmeansSelectStartingCentroids(int k, int* means) {
       int closest_distance = INT_MAX;
       int d;
       for (int existing_cluster = 0; existing_cluster < cluster; existing_cluster++) {
-        d = KmeansDistance(recv_buf[i], means[existing_cluster]); 
+        d = KmeansDistance(recv_buf[i], means[existing_cluster]);
         if (d < closest_distance) {
           closest_distance = d;
         }
@@ -82,7 +86,7 @@ void KmeansSelectStartingCentroids(int k, int* means) {
       int closest_distance = INT_MAX;
       int d;
       for (int existing_cluster = 0; existing_cluster < cluster; existing_cluster++) {
-        d = KmeansDistance(recv_buf[i], means[existing_cluster]); 
+        d = KmeansDistance(recv_buf[i], means[existing_cluster]);
         if (d < closest_distance) {
           closest_distance = d;
         }
@@ -115,9 +119,9 @@ void Kmeans(CircularBuffer<int, RECV_BUFFER_SIZE>* buf, int k, int *means) {
       int closest_cluster = INT_MAX;
       int closest_cluster_distance = INT_MAX;
       for (int cluster = 0; cluster < k; cluster++) {
-        int distance = KmeansDistance((*buf)[i], means[cluster]); 
+        int distance = KmeansDistance((*buf)[i], means[cluster]);
         if (distance < closest_cluster_distance) {
-          closest_cluster = cluster; 
+          closest_cluster = cluster;
           closest_cluster_distance = distance;
         }
       }
@@ -148,6 +152,7 @@ void Kmeans(CircularBuffer<int, RECV_BUFFER_SIZE>* buf, int k, int *means) {
 void TakeReading() {
   bool success = recv_buf.push(analogRead(LIGHT_SENSOR_PIN));
   if (!success) {
+    Serial.print(F("@@"));
     digitalWrite(ERROR_LED_PIN, HIGH);
   }
 }
@@ -220,20 +225,22 @@ int DetectHandshake(int split) {
   }
   double std_dev = sqrt(deviations / (double)pulse_lengths.size());
 
-  //for (int i = 0 ; i < pulse_lengths.size(); i++) {
-  //  Serial.print(pulse_lengths.get(i));
-  //  if (i != pulse_lengths.size() - 1) {
-  //    Serial.print(", ");
-  //  }
-  //}
-  //Serial.print("\n\r");
-  //Serial.print("avg: ");
-  //Serial.print(avg);
-  //Serial.print("\n\r");
-  //Serial.print("std dev: ");
-  //Serial.print(std_dev);
-  //Serial.print("\n\r");
-  //Serial.println("---");
+  Serial.print(F(KMAG));
+  for (int i = 0 ; i < pulse_lengths.size(); i++) {
+    Serial.print(pulse_lengths.get(i));
+    if (i != pulse_lengths.size() - 1) {
+      Serial.print(", ");
+    }
+  }
+  Serial.print("\n\r");
+  Serial.print("avg: ");
+  Serial.print(avg);
+  Serial.print("\n\r");
+  Serial.print("std dev: ");
+  Serial.print(std_dev);
+  Serial.print("\n\r");
+  Serial.println("---");
+  Serial.print(F(RST));
 
   // A high standard deviation means that the pulses were or varying widths,
   // and therefor, not a handshake.  They must be very precisely timed or
@@ -260,7 +267,7 @@ void ClearBufferAndRestartCollection() {
 int BlockForNextReading() {
   int reading;
 
-  while (recv_buf.isEmpty()) { delay(READING_PERIOD_US); };
+  while (recv_buf.isEmpty()) { delay(READING_PERIOD_US / 1000); };
 
   noInterrupts();
   reading = recv_buf.shift();
@@ -269,50 +276,166 @@ int BlockForNextReading() {
   return reading;
 }
 
-void Receive(int bit_length, int split) {
-  ClearBufferAndRestartCollection();
-
+void AlignBufferWithBitBoundaries(int split) {
+  // Once we've identified a handshake and figured out what the split and bit
+  // length are we need to make sure that the recieve buffer is aligned with
+  // bit boundaries.  This essentially means we want the first value in the
+  // buffer to be the first reading for either a 0 or a 1.  This is done by
+  // consuming values until we see a boundary, and then putting that first
+  // reading of the new bit back onto the buffer.
   Serial.print(F("Aligning readings with bit boundaries in handshake..."));
   // TODO: This seems somewhat naive to just assume the first edge I see is
   // well aligned.  Perhaps if I looked for several edges I could do better?
   int reading, conv, value = -1;
-  while (conv == value || value == -1) {
+  do {
     reading = BlockForNextReading();
     conv = (reading >= split);
     if (value == -1) {
       value = conv;
     }
-  }
+  } while (conv == value);
+
   // Unshift the last reading back on (it's the start of a new bit)
   noInterrupts();
   recv_buf.unshift(reading);
   interrupts();
-  Serial.print(F(FGRN("\tDONE\n\r")));
+
+  Serial.print(F(FGRN("\tDONE\n\t")));
+}
+
+int ReadNextFullBit(int bit_length, int split) {
+  // Read in the right number of readings to cover one whole bit and see
+  // what their average light level is.  Determine if it's a 1 or a 0 and
+  // return that value.
+  // Note this assumes the buffer is already aligned with the bit boundaries.
+  int reading, total = 0;
+  Serial.print(F("["));
+  for (int sample = 0; sample < bit_length; sample++) {
+    reading = BlockForNextReading();
+    Serial.print(reading);
+    if (sample < bit_length - 1) {
+      Serial.print(F(" "));
+    }
+    total += reading;
+  }
+  Serial.print(F("] = "));
+  int bit = ((total / bit_length) >= split);
+  Serial.print(bit);
+  Serial.print(F("\n\r"));
+  return bit;
+}
+
+int ReadNextFullByte(int bit_length, int split) {
+  int val = 0;
+  for (int i = 0; i < 8; i++) {
+    int bit = ReadNextFullBit(bit_length, split);
+    val = (val << 1) | bit;
+  }
+  return val;
+}
+
+bool WaitForMagicNumber(int bit_length, int split) {
+  // This function reads in (already confirmed) handshake byte by byte and
+  // checks for the end of the handshake.  This is indicated by a "magic
+  // number that tells the receiver that data will be coming next.
+  Serial.println(F("Waiting for data to start..."));
+
+  Serial.print(F("Tracking handshake: "));
+  // Get a full byte to fill out the rolling value to start with;
+  uint8_t rolling_value = ReadNextFullByte(bit_length, split);
+  if (rolling_value == 0b01010101 || rolling_value == 0b10101010) {
+    Serial.print(F(KGRN));
+  } else {
+    Serial.print(F(KRED));
+  }
+  for (int i = 7; i >= 0; i--) {
+    Serial.print((rolling_value & (0x01 << i)) >> i);
+  }
+  Serial.print(F(RST));
+  Serial.print(F(" "));
+  if (rolling_value != 0b01010101 && rolling_value != 0b10101010) {
+    Serial.print(F("\n\r"));
+    Serial.println(F(FRED("Invalid bits after intital handshake detection.")));
+    return false;
+  }
+
+  // Read in bits one at a time, until we see something that doesn't
+  // Strictly alternate.  That means that bit must be part of the first byte
+  // (and hopefully the Magic number)
+  int bit = rolling_value & 0x01, last_bit;
+  int count = 0;
+  do {
+    last_bit = bit;
+    bit = ReadNextFullBit(bit_length, split);
+    rolling_value = (rolling_value << 1) | bit;
+
+    if (last_bit != bit) {
+      Serial.print(F(KGRN));
+    } else {
+      Serial.print(F(KRED));
+    }
+    Serial.print(bit);
+    Serial.print(F(RST));
+    count++;
+  } while (last_bit != bit);
+  Serial.print(F("\n\r  (read "));
+  Serial.print(count);
+  Serial.print(F(" bits of handshake)\n\r"));
+
+
+  // Now read in up to 8 more bits, checking the rolling value against the
+  // magic number.  If we never find it, then something's wrong.  All 8 of
+  // may not be used, but we can't always know exactly where the Magic #
+  // starts (basically we're aligning by byte now, instead of by bit)
+  Serial.println(F("Attempting to align at the byte level w/ magic number..."));
+  for (int i = 0; i < 8; i++) {
+    Serial.print(F("\t"));
+    if (rolling_value == DATA_START_MAGIC_NUMBER) {
+      // We've got a full magic number stored in the byte, so we're good.  We
+      // now are fully byte-aligned and ready to receive the actual data.
+      Serial.print(F(KGRN));
+      Serial.print(F("0x"));
+      Serial.print(rolling_value, HEX);
+      Serial.print(F(RST));
+      Serial.print(F("\n\r"));
+      Serial.print(F(FGRN("SUCCESS, magic number found and we're now byte aligned.")));
+      return true;
+    } else {
+      Serial.print(F(KYEL));
+      Serial.print(F("0x"));
+      Serial.print(rolling_value, HEX);
+      Serial.print(F(RST));
+      Serial.print(F("\n\r"));
+    }
+    bit = ReadNextFullBit(bit_length, split);
+    rolling_value = (rolling_value << 1) | bit;
+  }
+
+  // If that loop ends, that means we never found the magic number and somethig
+  // is wrong.
+  Serial.print(F(FRED("FAILURE, the handshake ended, but no magic number found!")));
+  return false;
+}
+
+void Receive(int bit_length, int split) {
+  ClearBufferAndRestartCollection();
+
+  // Make sure our readings are aligned with the transmitter.
+  AlignBufferWithBitBoundaries(split);
 
   // Now wait until the data actually starts to arrive
-  // TODO: Wait for start-of-data message
+  WaitForMagicNumber(bit_length, split);
 
   // Collect the actual bits themselves.
   // TODO: This is also somewhat naive, just reading in the bit blindly, without
   // ever realigning.
-  Serial.println(F("Receiving data..."));
-  for (int i = 0; i < 10; i++) {
-    int val = 0;
-    for (int bit = 0; bit < 8; bit++) {
-      int total = 0;
-      for (int sample = 0; sample < bit_length; sample++) {
-        reading = BlockForNextReading();
-        total += reading;
-      }
-      val <<= 1;
-      if (total / bit_length > split) {
-        val |= 1;
-      }
-    }
-    Serial.print(val, HEX);
-    Serial.print(F(" "));
-  }
-  Serial.print(F("\n\r"));
+  Serial.println(F(FMAG("TODO: RECEIVE DATA HERE")));
+//  for (int i = 0; i < 10; i++) {
+//    int val = ReadNextFullByte(bit_length, split);
+//    Serial.print(val, HEX);
+//    Serial.print(F(" "));
+//  }
+//  Serial.print(F("\n\r"));
   StopCollection();
 }
 
@@ -355,10 +478,12 @@ void loop() {
       }
       Serial.print(F("\n\r"));
     } else {
-      Serial.print(F(FGRN("Handshake detected!")));
+      Serial.println(F(FGRN("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
+      Serial.print(F(FGRN("X Handshake detected!")));
       Serial.print(F("\t(bit length: "));
       Serial.print(bit_length);
       Serial.print(F(")\n\r"));
+      Serial.println(F(FGRN("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
       Receive(bit_length, split);
     }
 
