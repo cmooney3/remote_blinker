@@ -2,14 +2,13 @@
 #include <limits.h>
 #include <TimerOne.h>
 
-#define HANDSHAKE_LEN 1000
-
 #define LED_PIN 6
 #define ISR_PERIOD_US 100
 
-#define BIT_LENGTH 210
+#define BIT_LENGTH 110
 
-#define HANDSHAKE_LENGTH 200
+#define HANDSHAKE_LENGTH 500
+#define MAX_DATA_LENGTH 500
 
 #define IDLE 0
 #define HANDSHAKE 1
@@ -22,6 +21,8 @@
 
 int transmission_stage;
 int cycles_remaining, handshake_count, magic_bit;;
+int data_byte, data_bit, data_length, length_bit;
+char transmission_data[MAX_DATA_LENGTH];
 volatile bool transmission_complete;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -44,7 +45,24 @@ void TimerHandler() {
           transmission_stage = LENGTH;
         }
         break;
-
+      case LENGTH:
+        digitalWrite(LED_PIN, (data_length >> (7 - length_bit)) & 0x01);
+        length_bit++;
+        if (length_bit >= 8) {
+          transmission_stage = DATA;
+        }
+        break;
+      case DATA:
+        digitalWrite(LED_PIN, (transmission_data[data_byte] >> (7 - data_bit)) & 0x01);
+        data_bit++;
+        if (data_bit >= 8) {
+          data_bit = 0;
+          data_byte++;
+        }
+        if (data_byte > data_length) {
+          transmission_stage = IDLE;
+        }
+        break;
       default:
         Timer1.detachInterrupt();
         transmission_complete = true;
@@ -62,10 +80,15 @@ void setup() {
   Timer1.initialize();
 }
 
-void Send() {
+void Send(String msg) {
   transmission_stage = HANDSHAKE;
   handshake_count = HANDSHAKE_LENGTH;
   magic_bit = 0;
+  data_byte = 0;
+  data_bit = 0;
+  length_bit = 0;
+  strcpy(transmission_data, msg.c_str());
+  data_length = strlen(transmission_data);
   transmission_complete = false;
 
   Timer1.setPeriod(ISR_PERIOD_US);
@@ -78,8 +101,8 @@ void Send() {
 }
 
 void loop() {
-  Send();
-  delay(3000);
-//  is_handshaking = false;;
-//  delay(10000);
+  Send("This is a test... Working?");
+  delay(30000);
+  Send("Let's try again with a different, longer message.  Does this one still work? confirming...");
+  delay(30000);
 }

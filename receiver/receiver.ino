@@ -37,6 +37,8 @@
 #define KMAG  "\x1B[35m"
 #define KCYN  "\x1B[36m"
 #define KWHT  "\x1B[37m"
+#define KBOLD "\x1B[1m"
+#define KUNDL "\x1B[4m"
 
 #define FRED(x) KRED x RST
 #define FGRN(x) KGRN x RST
@@ -46,8 +48,8 @@
 #define FCYN(x) KCYN x RST
 #define FWHT(x) KWHT x RST
 
-#define BOLD(x) "\x1B[1m" x RST
-#define UNDL(x) "\x1B[4m" x RST
+#define BOLD(x) KBOLD x RST
+#define UNDL(x) KUNDL x RST
 
 ////////////////////////////////////////////////////////////////////////////////
 // CIRCUILAR BUFFERS SETUP
@@ -225,22 +227,22 @@ int DetectHandshake(int split) {
   }
   double std_dev = sqrt(deviations / (double)pulse_lengths.size());
 
-  Serial.print(F(KMAG));
-  for (int i = 0 ; i < pulse_lengths.size(); i++) {
-    Serial.print(pulse_lengths.get(i));
-    if (i != pulse_lengths.size() - 1) {
-      Serial.print(", ");
-    }
-  }
-  Serial.print("\n\r");
-  Serial.print("avg: ");
-  Serial.print(avg);
-  Serial.print("\n\r");
-  Serial.print("std dev: ");
-  Serial.print(std_dev);
-  Serial.print("\n\r");
-  Serial.println("---");
-  Serial.print(F(RST));
+  //Serial.print(F(KMAG));
+  //for (int i = 0 ; i < pulse_lengths.size(); i++) {
+  //  Serial.print(pulse_lengths.get(i));
+  //  if (i != pulse_lengths.size() - 1) {
+  //    Serial.print(", ");
+  //  }
+  //}
+  //Serial.print("\n\r");
+  //Serial.print("avg: ");
+  //Serial.print(avg);
+  //Serial.print("\n\r");
+  //Serial.print("std dev: ");
+  //Serial.print(std_dev);
+  //Serial.print("\n\r");
+  //Serial.println("---");
+  //Serial.print(F(RST));
 
   // A high standard deviation means that the pulses were or varying widths,
   // and therefor, not a handshake.  They must be very precisely timed or
@@ -300,7 +302,7 @@ void AlignBufferWithBitBoundaries(int split) {
   recv_buf.unshift(reading);
   interrupts();
 
-  Serial.print(F(FGRN("\tDONE\n\t")));
+  Serial.print(F(FGRN("\tDONE\n\r")));
 }
 
 // TODO:  Make this "realign" after some drift
@@ -389,7 +391,7 @@ bool WaitForMagicNumber(int bit_length, int split) {
   // may not be used, but we can't always know exactly where the Magic #
   // starts (basically we're aligning by byte now, instead of by bit)
   Serial.println(F("Attempting to align at the byte level w/ magic number..."));
-  Serial.print(F("Candidates:"));
+  Serial.print(F("\tCandidates:"));
   for (int i = 0; i < 8; i++) {
     if (rolling_value == DATA_START_MAGIC_NUMBER) {
       // We've got a full magic number stored in the byte, so we're good.  We
@@ -399,7 +401,7 @@ bool WaitForMagicNumber(int bit_length, int split) {
       Serial.print(rolling_value, HEX);
       Serial.print(F(RST));
       Serial.print(F("\n\r"));
-      Serial.println(F(FGRN("SUCCESS, magic number found and we're now byte aligned.")));
+      Serial.println(F(FGRN("\tSUCCESS, magic number found and we're now byte aligned.")));
       return true;
     } else {
       Serial.print(F(KYEL));
@@ -414,7 +416,7 @@ bool WaitForMagicNumber(int bit_length, int split) {
 
   // If that loop ends, that means we never found the magic number and somethig
   // is wrong.
-  Serial.println(F(FRED("FAILURE, the handshake ended, but no magic number found!")));
+  Serial.println(F(FRED("\tFAILURE, the handshake ended, but no magic number found!")));
   return false;
 }
 
@@ -427,16 +429,21 @@ void Receive(int bit_length, int split) {
   // Now wait until the data actually starts to arrive
   WaitForMagicNumber(bit_length, split);
 
+  Serial.print(F("Data length: "));
+  int len = ReadNextFullByte(bit_length, split);
+  Serial.print(len);
+  Serial.print(F("\n\r"));
+
   // Collect the actual bits themselves.
-  // TODO: This is also somewhat naive, just reading in the bit blindly, without
-  // ever realigning.
-  Serial.println(F(FMAG("TODO: RECEIVE DATA HERE")));
-//  for (int i = 0; i < 10; i++) {
-//    int val = ReadNextFullByte(bit_length, split);
-//    Serial.print(val, HEX);
-//    Serial.print(F(" "));
-//  }
-//  Serial.print(F("\n\r"));
+  Serial.print(F(KGRN "Receiving "));
+  Serial.print(len);
+  Serial.print(F(" bytes:" RST));
+  Serial.print(F(KCYN KBOLD " \""));
+  for (int i = 0; i < len; i++) {
+    int val = ReadNextFullByte(bit_length, split);
+    Serial.print((char)val);
+  }
+  Serial.print(F("\"" RST "\n\r\n\r"));
   StopCollection();
 }
 
@@ -466,26 +473,29 @@ void loop() {
 
     // If a handshake was detected, begin listening for a message
     if (bit_length <= 1) {
-      Serial.print(F(FYEL("Handshake not detected.")));
-      Serial.print(F("\treason: "));
-      if (bit_length == -ENOTENOUGHPULSES) {
-          Serial.print(F("Not enough pulses detected."));
-      } else if (bit_length = -EHIGHSTDDEV) {
-          Serial.print(F("Pulse lengths varied too much."));
-      } else {
-          Serial.print(F("unknown ("));
-          Serial.print(bit_length);
-          Serial.print(F(")"));
-      }
-      Serial.print(F("\n\r"));
+      Serial.print(F(FYEL(".")));
+      //Serial.print(F("\treason: "));
+      //if (bit_length == -ENOTENOUGHPULSES) {
+      //    Serial.print(F("Not enough pulses detected."));
+      //} else if (bit_length = -EHIGHSTDDEV) {
+      //    Serial.print(F("Pulse lengths varied too much."));
+      //} else {
+      //    Serial.print(F("unknown ("));
+      //    Serial.print(bit_length);
+      //    Serial.print(F(")"));
+      //}
+      //Serial.print(F("\n\r"));
     } else {
-      Serial.println(F(FGRN("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
-      Serial.print(F(FGRN("X Handshake detected!")));
+      Serial.print(F("\n\r\n\r"));
+      Serial.println(F(FMAG("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
+      Serial.print(F(FMAG("X Handshake detected!")));
       Serial.print(F("\t(bit length: "));
       Serial.print(bit_length);
       Serial.print(F(") readings\n\r"));
-      Serial.println(F(FGRN("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
+      Serial.println(F(FMAG("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
       Receive(bit_length, split);
+
+      Serial.print(F(FYEL("Listenining: ")));
     }
 
     ClearBufferAndRestartCollection();
