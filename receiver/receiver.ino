@@ -303,25 +303,26 @@ void AlignBufferWithBitBoundaries(int split) {
   Serial.print(F(FGRN("\tDONE\n\t")));
 }
 
+// TODO:  Make this "realign" after some drift
 int ReadNextFullBit(int bit_length, int split) {
   // Read in the right number of readings to cover one whole bit and see
   // what their average light level is.  Determine if it's a 1 or a 0 and
   // return that value.
   // Note this assumes the buffer is already aligned with the bit boundaries.
   int reading, total = 0;
-  Serial.print(F("["));
+//  Serial.print(F("["));
   for (int sample = 0; sample < bit_length; sample++) {
     reading = BlockForNextReading();
-    Serial.print(reading);
+//    Serial.print(reading);
     if (sample < bit_length - 1) {
-      Serial.print(F(" "));
+//      Serial.print(F(" "));
     }
     total += reading;
   }
-  Serial.print(F("] = "));
+//  Serial.print(F("] = "));
   int bit = ((total / bit_length) >= split);
-  Serial.print(bit);
-  Serial.print(F("\n\r"));
+//  Serial.print(bit);
+//  Serial.print(F("\n\r"));
   return bit;
 }
 
@@ -378,9 +379,9 @@ bool WaitForMagicNumber(int bit_length, int split) {
     Serial.print(F(RST));
     count++;
   } while (last_bit != bit);
-  Serial.print(F("\n\r  (read "));
+  Serial.print(F("\n\rRead "));
   Serial.print(count);
-  Serial.print(F(" bits of handshake)\n\r"));
+  Serial.print(F(" bits of handshake.\n\r"));
 
 
   // Now read in up to 8 more bits, checking the rolling value against the
@@ -388,32 +389,32 @@ bool WaitForMagicNumber(int bit_length, int split) {
   // may not be used, but we can't always know exactly where the Magic #
   // starts (basically we're aligning by byte now, instead of by bit)
   Serial.println(F("Attempting to align at the byte level w/ magic number..."));
+  Serial.print(F("Candidates:"));
   for (int i = 0; i < 8; i++) {
-    Serial.print(F("\t"));
     if (rolling_value == DATA_START_MAGIC_NUMBER) {
       // We've got a full magic number stored in the byte, so we're good.  We
       // now are fully byte-aligned and ready to receive the actual data.
       Serial.print(F(KGRN));
-      Serial.print(F("0x"));
+      Serial.print(F(" 0x"));
       Serial.print(rolling_value, HEX);
       Serial.print(F(RST));
       Serial.print(F("\n\r"));
-      Serial.print(F(FGRN("SUCCESS, magic number found and we're now byte aligned.")));
+      Serial.println(F(FGRN("SUCCESS, magic number found and we're now byte aligned.")));
       return true;
     } else {
       Serial.print(F(KYEL));
-      Serial.print(F("0x"));
+      Serial.print(F(" 0x"));
       Serial.print(rolling_value, HEX);
       Serial.print(F(RST));
-      Serial.print(F("\n\r"));
     }
     bit = ReadNextFullBit(bit_length, split);
     rolling_value = (rolling_value << 1) | bit;
   }
+  Serial.print(F("\n\r"));
 
   // If that loop ends, that means we never found the magic number and somethig
   // is wrong.
-  Serial.print(F(FRED("FAILURE, the handshake ended, but no magic number found!")));
+  Serial.println(F(FRED("FAILURE, the handshake ended, but no magic number found!")));
   return false;
 }
 
@@ -482,7 +483,7 @@ void loop() {
       Serial.print(F(FGRN("X Handshake detected!")));
       Serial.print(F("\t(bit length: "));
       Serial.print(bit_length);
-      Serial.print(F(")\n\r"));
+      Serial.print(F(") readings\n\r"));
       Serial.println(F(FGRN("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
       Receive(bit_length, split);
     }
