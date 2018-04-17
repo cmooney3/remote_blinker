@@ -1,3 +1,5 @@
+#include <util/crc16.h>
+
 #include <CircularBuffer.h>
 #include <limits.h>
 #include <LinkedList.h>
@@ -11,7 +13,7 @@
 #define ERROR_LED_PIN 4
 #define LIGHT_SENSOR_PIN 0
 
-#define READING_PERIOD_US 250
+#define READING_PERIOD_US 1000
 #define RECV_BUFFER_SIZE 600
 
 #define HANDSHAKE_MIN_PULSES 15
@@ -420,8 +422,8 @@ bool WaitForMagicNumber(int bit_length, int split) {
 }
 
 void Receive(int bit_length, int split) {
-  uint8_t len[2];
-  uint16_t message_len;
+  uint8_t len[2], crc16[2], *data;
+  uint16_t message_len, data_crc16, computed_data_crc16;
   ClearBufferAndRestartCollection();
 
   // Make sure our readings are aligned with the transmitter.
@@ -432,6 +434,7 @@ void Receive(int bit_length, int split) {
     goto abort;
   }
 
+  // Read off how long the message is (in bytes)
   len[0] = ReadNextFullByte(bit_length, split);
   len[1] = ReadNextFullByte(bit_length, split);
   message_len = (len[0] << 8) | len[1];
@@ -445,16 +448,48 @@ void Receive(int bit_length, int split) {
   Serial.print(F("\n\r"));
 
   // Collect the actual bits themselves.
+  data = (uint8_t*)malloc(sizeof(uint8_t) * message_len);
   Serial.print(F(KGRN "Receiving "));
   Serial.print(message_len);
   Serial.print(F(" bytes:" RST));
   Serial.print(F(KCYN KBOLD " \""));
   for (int i = 0; i < message_len; i++) {
-    Serial.print((char)ReadNextFullByte(bit_length, split));
+    data[i] = ReadNextFullByte(bit_length, split);
+    Serial.print((char)data[i]);
   }
-  Serial.print(F("\"" RST "\n\r\n\r"));
+  Serial.print(F("\"" RST "\n\r"));
+
+  // Read in the checksum for the data (CRC16) and confirm it's OK
+  crc16[0] = ReadNextFullByte(bit_length, split);
+  crc16[1] = ReadNextFullByte(bit_length, split);
+  data_crc16 = (crc16[0] << 8) | crc16[1];
+  Serial.print(F("Received CRC16 for data = [0x"));
+  Serial.print(crc16[0], HEX);
+  Serial.print(F(", 0x"));
+  Serial.print(crc16[1], HEX);
+  Serial.print(F("]  (eg: "));
+  Serial.print(data_crc16);
+  Serial.print(F(")\n\r"));
+  computed_data_crc16 = 0;
+  for (int i = 0; i < message_len; i++) {
+    computed_data_crc16 = _crc16_update(computed_data_crc16, data[i]);
+  }
+  Serial.print(F("Computed CRC16 for data = "));
+  Serial.print(computed_data_crc16);
+  Serial.print(F("\n\r"));
+  if (computed_data_crc16 == data_crc16) {
+    Serial.print(F(FGRN("SUCCESS")));
+    Serial.print(F(" -- the checksums match"));
+  } else {
+    Serial.print(F(FRED("FAILED")));
+    Serial.print(F(" -- the checksums do not match!"));
+  }
+  Serial.print(F("\n\r"));
+
+  free(data);
 
 abort:
+  Serial.print(F("\n\r"));
   StopCollection();
 }
 

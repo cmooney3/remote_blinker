@@ -1,16 +1,19 @@
+#include <util/crc16.h>
+
 #include <CircularBuffer.h>
 #include <limits.h>
 #include <TimerOne.h>
 
 #define LED_PIN 6
-#define ISR_PERIOD_US 25
+#define ISR_PERIOD_US 100
 
 #define BIT_LENGTH 110
 
-#define HANDSHAKE_LENGTH 300
+#define HANDSHAKE_LENGTH 3000
 #define MAX_DATA_LENGTH 900
 
 #define LENGTH_BITS 16
+#define CRC16_BITS 16
 
 uint8_t transmission_stage;
 #define IDLE 0
@@ -18,6 +21,7 @@ uint8_t transmission_stage;
 #define MAGIC_NUM 2
 #define LENGTH 3
 #define DATA 4
+#define CSUM_DATA 5
 
 // Make sure this is the same as in receiver.ino or nothing works!!
 #define DATA_START_MAGIC_NUMBER 0x0F
@@ -25,8 +29,9 @@ uint8_t transmission_stage;
 uint32_t handshake_count;
 int8_t cycles_remaining, magic_bit;;
 int16_t data_length, data_byte;
-uint8_t data_bit, length_bit;
+uint8_t data_bit, length_bit, data_crc16_bit;
 uint8_t transmission_data[MAX_DATA_LENGTH];
+uint16_t data_crc16;
 volatile bool transmission_complete;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -64,6 +69,13 @@ void TimerHandler() {
           data_byte++;
         }
         if (data_byte >= data_length) {
+          transmission_stage = CSUM_DATA;
+        }
+        break;
+      case CSUM_DATA:
+        digitalWrite(LED_PIN, (data_crc16 >> ((CRC16_BITS - 1) - data_crc16_bit)) & 0x01);
+        data_crc16_bit++;
+        if (data_crc16_bit >= CRC16_BITS) {
           transmission_stage = IDLE;
         }
         break;
@@ -86,13 +98,26 @@ void setup() {
 
 void Send(String msg) {
   transmission_stage = HANDSHAKE;
+
   handshake_count = HANDSHAKE_LENGTH;
+
   magic_bit = 0;
+
   data_byte = 0;
   data_bit = 0;
+
   length_bit = 0;
+
   strcpy((char*)transmission_data, msg.c_str());
+
   data_length = strlen((char*)transmission_data);
+
+  data_crc16 = 0;
+  for (int i = 0; i < data_length; i++) {
+    data_crc16 = _crc16_update(data_crc16, transmission_data[i]);
+  }
+  data_crc16_bit = 0;
+
   transmission_complete = false;
 
   Timer1.setPeriod(ISR_PERIOD_US);
