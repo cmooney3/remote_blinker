@@ -328,11 +328,10 @@ int ReadNextFullBit(int bit_length, int split) {
   return bit;
 }
 
-int ReadNextFullByte(int bit_length, int split) {
-  int val = 0;
+uint8_t ReadNextFullByte(int bit_length, int split) {
+  uint8_t val = 0;
   for (int i = 0; i < 8; i++) {
-    int bit = ReadNextFullBit(bit_length, split);
-    val = (val << 1) | bit;
+    val = (val << 1) | ReadNextFullBit(bit_length, split);
   }
   return val;
 }
@@ -416,34 +415,46 @@ bool WaitForMagicNumber(int bit_length, int split) {
 
   // If that loop ends, that means we never found the magic number and somethig
   // is wrong.
-  Serial.println(F(FRED("\tFAILURE, the handshake ended, but no magic number found!")));
+  Serial.println(F(FRED("\tFAILURE, the handshake ended, but no magic number found!\n\r")));
   return false;
 }
 
 void Receive(int bit_length, int split) {
+  uint8_t len[2];
+  uint16_t message_len;
   ClearBufferAndRestartCollection();
 
   // Make sure our readings are aligned with the transmitter.
   AlignBufferWithBitBoundaries(split);
 
   // Now wait until the data actually starts to arrive
-  WaitForMagicNumber(bit_length, split);
+  if (!WaitForMagicNumber(bit_length, split)) {
+    goto abort;
+  }
 
+  len[0] = ReadNextFullByte(bit_length, split);
+  len[1] = ReadNextFullByte(bit_length, split);
+  message_len = (len[0] << 8) | len[1];
+  Serial.print(F("Raw len data = [0x"));
+  Serial.print(len[0], HEX);
+  Serial.print(F(", 0x"));
+  Serial.print(len[1], HEX);
+  Serial.print(F("]\n\r"));
   Serial.print(F("Data length: "));
-  int len = ReadNextFullByte(bit_length, split);
-  Serial.print(len);
+  Serial.print(message_len);
   Serial.print(F("\n\r"));
 
   // Collect the actual bits themselves.
   Serial.print(F(KGRN "Receiving "));
-  Serial.print(len);
+  Serial.print(message_len);
   Serial.print(F(" bytes:" RST));
   Serial.print(F(KCYN KBOLD " \""));
-  for (int i = 0; i < len; i++) {
-    int val = ReadNextFullByte(bit_length, split);
-    Serial.print((char)val);
+  for (int i = 0; i < message_len; i++) {
+    Serial.print((char)ReadNextFullByte(bit_length, split));
   }
   Serial.print(F("\"" RST "\n\r\n\r"));
+
+abort:
   StopCollection();
 }
 

@@ -7,8 +7,10 @@
 
 #define BIT_LENGTH 110
 
-#define HANDSHAKE_LENGTH 500
-#define MAX_DATA_LENGTH 500
+#define HANDSHAKE_LENGTH 300
+#define MAX_DATA_LENGTH 900
+
+#define LENGTH_BITS 16
 
 #define IDLE 0
 #define HANDSHAKE 1
@@ -20,8 +22,10 @@
 #define DATA_START_MAGIC_NUMBER 0x0F
 
 int transmission_stage;
-int cycles_remaining, handshake_count, magic_bit;;
-int data_byte, data_bit, data_length, length_bit;
+long handshake_count;
+int cycles_remaining, magic_bit;;
+int16_t data_length;
+int data_byte, data_bit, length_bit;
 char transmission_data[MAX_DATA_LENGTH];
 volatile bool transmission_complete;
 
@@ -46,9 +50,9 @@ void TimerHandler() {
         }
         break;
       case LENGTH:
-        digitalWrite(LED_PIN, (data_length >> (7 - length_bit)) & 0x01);
+        digitalWrite(LED_PIN, (data_length >> ((LENGTH_BITS - 1) - length_bit)) & 0x01);
         length_bit++;
-        if (length_bit >= 8) {
+        if (length_bit >= LENGTH_BITS) {
           transmission_stage = DATA;
         }
         break;
@@ -59,7 +63,7 @@ void TimerHandler() {
           data_bit = 0;
           data_byte++;
         }
-        if (data_byte > data_length) {
+        if (data_byte >= data_length) {
           transmission_stage = IDLE;
         }
         break;
@@ -102,7 +106,9 @@ void Send(String msg) {
 
 void loop() {
   Send("This is a test... Working?");
-  delay(30000);
+  delay(3000);
   Send("Let's try again with a different, longer message.  Does this one still work? confirming...");
-  delay(30000);
+  delay(3000);
+  Send("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXA");
+  delay(3000);
 }
