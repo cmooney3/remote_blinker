@@ -3,7 +3,7 @@
 #include <TimerOne.h>
 
 #define LED_PIN 6
-#define ISR_PERIOD_US 100
+#define ISR_PERIOD_US 25
 
 #define BIT_LENGTH 110
 
@@ -12,6 +12,7 @@
 
 #define LENGTH_BITS 16
 
+uint8_t transmission_stage;
 #define IDLE 0
 #define HANDSHAKE 1
 #define MAGIC_NUM 2
@@ -21,12 +22,11 @@
 // Make sure this is the same as in receiver.ino or nothing works!!
 #define DATA_START_MAGIC_NUMBER 0x0F
 
-int transmission_stage;
-long handshake_count;
-int cycles_remaining, magic_bit;;
-int16_t data_length;
-int data_byte, data_bit, length_bit;
-char transmission_data[MAX_DATA_LENGTH];
+uint32_t handshake_count;
+int8_t cycles_remaining, magic_bit;;
+int16_t data_length, data_byte;
+uint8_t data_bit, length_bit;
+uint8_t transmission_data[MAX_DATA_LENGTH];
 volatile bool transmission_complete;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -91,8 +91,8 @@ void Send(String msg) {
   data_byte = 0;
   data_bit = 0;
   length_bit = 0;
-  strcpy(transmission_data, msg.c_str());
-  data_length = strlen(transmission_data);
+  strcpy((char*)transmission_data, msg.c_str());
+  data_length = strlen((char*)transmission_data);
   transmission_complete = false;
 
   Timer1.setPeriod(ISR_PERIOD_US);
@@ -107,8 +107,8 @@ void Send(String msg) {
 void loop() {
   Send("This is a test... Working?");
   delay(3000);
-  Send("Let's try again with a different, longer message.  Does this one still work? confirming...");
+  Send("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam id viverra sapien. Suspendisse vel mollis urna. Nullam convallis nisl nec rhoncus consectetur. Aenean nec enim sodales, egestas mauris eget, congue nisl. Quisque blandit vitae risus in aliquet.  That's over 255 chars.  Does it still work?  What if it's way way way way longer?  Will it still work then?");
   delay(3000);
-  Send("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXA");
+  Send("Final transmission");
   delay(3000);
 }
