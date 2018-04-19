@@ -22,8 +22,9 @@ uint8_t transmission_stage;
 #define HANDSHAKE 1
 #define MAGIC_NUM 2
 #define LENGTH 3
-#define DATA 4
-#define CSUM_DATA 5
+#define CSUM_LENGTH 4
+#define DATA 5
+#define CSUM_DATA 6
 
 // Make sure this is the same as in receiver.ino or nothing works!!
 #define DATA_START_MAGIC_NUMBER 0x0F
@@ -31,9 +32,9 @@ uint8_t transmission_stage;
 uint32_t handshake_count;
 int8_t cycles_remaining, magic_bit;;
 int16_t data_length, data_byte;
-uint8_t data_bit, length_bit, data_crc16_bit;
+uint8_t data_bit, data_crc16_bit, length_bit, length_crc16_bit;
 uint8_t transmission_data[MAX_DATA_LENGTH];
-uint16_t data_crc16;
+uint16_t data_crc16, length_crc16;
 volatile bool transmission_complete;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -60,6 +61,13 @@ void TimerHandler() {
         digitalWrite(LED_PIN, (data_length >> ((LENGTH_BITS - 1) - length_bit)) & 0x01);
         length_bit++;
         if (length_bit >= LENGTH_BITS) {
+          transmission_stage = CSUM_LENGTH;
+        }
+        break;
+      case CSUM_LENGTH:
+        digitalWrite(LED_PIN, (length_crc16 >> ((CRC16_BITS - 1) - length_crc16_bit)) & 0x01);
+        length_crc16_bit++;
+        if (length_crc16_bit >= CRC16_BITS) {
           transmission_stage = DATA;
         }
         break;
@@ -108,17 +116,18 @@ void Send(String msg) {
   data_byte = 0;
   data_bit = 0;
 
-  length_bit = 0;
-
   strcpy((char*)transmission_data, msg.c_str());
-
   data_length = strlen((char*)transmission_data);
-
   data_crc16 = 0;
   for (int i = 0; i < data_length; i++) {
     data_crc16 = _crc16_update(data_crc16, transmission_data[i]);
   }
   data_crc16_bit = 0;
+
+  length_bit = 0;
+  length_crc16_bit = 0;
+  length_crc16 = _crc16_update(0, (data_length >> 8) & 0xFF);
+  length_crc16 = _crc16_update(length_crc16, data_length & 0xFF);
 
   transmission_complete = false;
 

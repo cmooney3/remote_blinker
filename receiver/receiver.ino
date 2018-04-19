@@ -27,6 +27,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 #define ENOTENOUGHPULSES 1
 #define EHIGHSTDDEV 2
+#define EBADCHECKSUM 3
 
 ////////////////////////////////////////////////////////////////////////////////
 // MACROS FOR TEXT FORMATTING (usefull while debugging, but not essential)
@@ -337,6 +338,12 @@ uint8_t ReadNextFullByte(uint16_t bit_length, uint16_t split) {
   return val;
 }
 
+uint16_t Read16BitInt(uint16_t bit_length, uint16_t split) {
+  uint8_t byte1 = ReadNextFullByte(bit_length, split);
+  uint8_t byte0 = ReadNextFullByte(bit_length, split);
+  return (byte1 << 8) | byte0;
+}
+
 bool WaitForMagicNumber(uint16_t bit_length, uint16_t split) {
   // This function reads in (already confirmed) handshake byte by byte and
   // checks for the end of the handshake.  This is indicated by a "magic
@@ -420,9 +427,40 @@ bool WaitForMagicNumber(uint16_t bit_length, uint16_t split) {
   return false;
 }
 
+uint16_t ReadInLength(uint16_t bit_length, uint16_t split) {
+  // First read in two bytes (16 bit length field)
+  uint16_t message_len = Read16BitInt(bit_length, split);
+  Serial.print(F("Data length: "));
+  Serial.print(message_len);
+  Serial.print(F("\n\r"));
+
+  // Now read in the crc16 for the length, to make sure it's all good
+  uint16_t crc16 = Read16BitInt(bit_length, split);
+  Serial.print(F("Received length CRC: 0x"));
+  Serial.print(crc16, HEX);
+  Serial.print(F("\n\r"));
+
+  // Confirm that the CRC is correct
+  uint16_t computed_crc16 = 0;
+  computed_crc16 = _crc16_update(computed_crc16, (message_len >> 8) & 0xFF);
+  computed_crc16 = _crc16_update(computed_crc16, message_len & 0xFF);
+  Serial.print(F("Computed length CRC: 0x"));
+  Serial.print(computed_crc16, HEX);
+  Serial.print(F("\n\r"));
+
+  if (computed_crc16 == crc16) {
+    Serial.println(F(FGRN("SUCCESS") " -- length checksums match"));
+    return message_len;
+  } else {
+    Serial.println(F(FRED("ERROR") " -- length checksums don't match"));
+    return -EBADCHECKSUM;
+  }
+}
+
 void Receive(uint16_t bit_length, uint16_t split) {
-  uint8_t len[2], crc16[2], *data;
-  uint16_t message_len, data_crc16, computed_data_crc16;
+  uint8_t *data;
+  uint16_t data_crc16, computed_data_crc16;
+  int16_t message_len;
   ClearBufferAndRestartCollection();
 
   // Make sure our readings are aligned with the transmitter.
@@ -433,18 +471,10 @@ void Receive(uint16_t bit_length, uint16_t split) {
     goto abort;
   }
 
-  // Read off how long the message is (in bytes)
-  len[0] = ReadNextFullByte(bit_length, split);
-  len[1] = ReadNextFullByte(bit_length, split);
-  message_len = (len[0] << 8) | len[1];
-  Serial.print(F("Raw len data = [0x"));
-  Serial.print(len[0], HEX);
-  Serial.print(F(", 0x"));
-  Serial.print(len[1], HEX);
-  Serial.print(F("]\n\r"));
-  Serial.print(F("Data length: "));
-  Serial.print(message_len);
-  Serial.print(F("\n\r"));
+  message_len = ReadInLength(bit_length, split);
+  if (message_len < 0) {
+    goto abort;
+  }
 
   // Collect the actual bits themselves.
   data = (uint8_t*)malloc(sizeof(uint8_t) * message_len);
@@ -459,29 +489,23 @@ void Receive(uint16_t bit_length, uint16_t split) {
   Serial.print(F("\"" RST "\n\r"));
 
   // Read in the checksum for the data (CRC16) and confirm it's OK
-  crc16[0] = ReadNextFullByte(bit_length, split);
-  crc16[1] = ReadNextFullByte(bit_length, split);
-  data_crc16 = (crc16[0] << 8) | crc16[1];
-  Serial.print(F("Received CRC16 for data = [0x"));
-  Serial.print(crc16[0], HEX);
-  Serial.print(F(", 0x"));
-  Serial.print(crc16[1], HEX);
-  Serial.print(F("]  (eg: "));
-  Serial.print(data_crc16);
-  Serial.print(F(")\n\r"));
+  data_crc16 = Read16BitInt(bit_length, split);
+  Serial.print(F("Received CRC16 for data = 0x"));
+  Serial.print(data_crc16, HEX);
+  Serial.print(F("\n\r"));
   computed_data_crc16 = 0;
   for (int i = 0; i < message_len; i++) {
     computed_data_crc16 = _crc16_update(computed_data_crc16, data[i]);
   }
-  Serial.print(F("Computed CRC16 for data = "));
-  Serial.print(computed_data_crc16);
+  Serial.print(F("Computed CRC16 for data = 0x"));
+  Serial.print(computed_data_crc16, HEX);
   Serial.print(F("\n\r"));
   if (computed_data_crc16 == data_crc16) {
     Serial.print(F(FGRN("SUCCESS")));
-    Serial.print(F(" -- the checksums match"));
+    Serial.print(F(" -- the data checksums match"));
   } else {
     Serial.print(F(FRED("FAILED")));
-    Serial.print(F(" -- the checksums do not match!"));
+    Serial.print(F(" -- the data checksums do not match!"));
   }
   Serial.print(F("\n\r"));
 
