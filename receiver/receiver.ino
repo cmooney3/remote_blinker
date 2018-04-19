@@ -13,7 +13,7 @@
 #define ERROR_LED_PIN 4
 #define LIGHT_SENSOR_PIN 0
 
-#define READING_PERIOD_US 1000
+#define READING_PERIOD_US 500
 #define RECV_BUFFER_SIZE 600
 
 #define HANDSHAKE_MIN_PULSES 15
@@ -502,10 +502,10 @@ void Receive(uint16_t bit_length, uint16_t split) {
   Serial.print(F("\n\r"));
   if (computed_data_crc16 == data_crc16) {
     Serial.print(F(FGRN("SUCCESS")));
-    Serial.print(F(" -- the data checksums match"));
+    Serial.print(F(" -- data checksums match"));
   } else {
     Serial.print(F(FRED("FAILED")));
-    Serial.print(F(" -- the data checksums do not match!"));
+    Serial.print(F(" -- data checksums do not match!"));
   }
   Serial.print(F("\n\r"));
 
@@ -560,7 +560,7 @@ void loop() {
       Serial.print(F(FMAG("X Handshake detected!")));
       Serial.print(F("\t(bit length: "));
       Serial.print(bit_length);
-      Serial.print(F(") readings\n\r"));
+      Serial.print(F(" readings)\n\r"));
       Serial.println(F(FMAG("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
       Receive((uint16_t)bit_length, split);
 
