@@ -9,7 +9,9 @@
 
 #define BIT_LENGTH 110
 
-#define HANDSHAKE_LENGTH 3000
+#define INTERMESSAGE_DELAY_MS 3000
+
+#define HANDSHAKE_LENGTH 300
 #define MAX_DATA_LENGTH 900
 
 #define LENGTH_BITS 16
@@ -131,9 +133,9 @@ void Send(String msg) {
 
 void loop() {
   Send("This is a test... Working?");
-  delay(3000);
+  delay(INTERMESSAGE_DELAY_MS);
   Send("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam id viverra sapien. Suspendisse vel mollis urna. Nullam convallis nisl nec rhoncus consectetur. Aenean nec enim sodales, egestas mauris eget, congue nisl. Quisque blandit vitae risus in aliquet.  That's over 255 chars.  Does it still work?  What if it's way way way way longer?  Will it still work then?");
-  delay(3000);
+  delay(INTERMESSAGE_DELAY_MS);
   Send("Final transmission");
-  delay(3000);
+  delay(INTERMESSAGE_DELAY_MS);
 }

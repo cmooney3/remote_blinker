@@ -56,26 +56,26 @@
 ////////////////////////////////////////////////////////////////////////////////
 // CIRCUILAR BUFFERS SETUP
 ////////////////////////////////////////////////////////////////////////////////
-CircularBuffer<int, RECV_BUFFER_SIZE> recv_buf;
+CircularBuffer<uint16_t, RECV_BUFFER_SIZE> recv_buf;
 
 ////////////////////////////////////////////////////////////////////////////////
 // K-MEANS TO DETECT BIMODAL LEVELS (ADJUSTING FOR LIGHT CONDITIONS)
 ////////////////////////////////////////////////////////////////////////////////
-int KmeansDistance(int v1, int v2) {
-  return abs(v1 - v2);
+uint16_t KmeansDistance(uint16_t v1, uint16_t v2) {
+  // Have to cast them a signed integers for the difference to work right
+  return abs((int32_t)v1 - (int32_t)v2);
 }
 
-void KmeansSelectStartingCentroids(int k, int* means) {
+void KmeansSelectStartingCentroids(uint8_t k, uint16_t* means) {
   // Select k random starting centroids as the initial means.  The subsequent
   // centroids are weighted to not be near the initial ones.
   means[0] = recv_buf[random(recv_buf.size())];
-  for (int cluster = 1; cluster < k; cluster++) {
-    long total_weights = 0;
+  for (uint8_t cluster = 1; cluster < k; cluster++) {
+    uint32_t total_weights = 0;
 
-    for (int i = 0; i < recv_buf.size(); i++) {
-      int closest_distance = INT_MAX;
-      int d;
-      for (int existing_cluster = 0; existing_cluster < cluster; existing_cluster++) {
+    for (uint16_t i = 0; i < recv_buf.size(); i++) {
+      uint16_t d, closest_distance = 0xFF;
+      for (uint8_t existing_cluster = 0; existing_cluster < cluster; existing_cluster++) {
         d = KmeansDistance(recv_buf[i], means[existing_cluster]);
         if (d < closest_distance) {
           closest_distance = d;
@@ -84,12 +84,11 @@ void KmeansSelectStartingCentroids(int k, int* means) {
       total_weights += closest_distance * closest_distance;
     }
 
-    int selection = random(total_weights);
+    uint32_t selection = random(total_weights);
 
-    for (int i = 0; i < recv_buf.size(); i++) {
-      int closest_distance = INT_MAX;
-      int d;
-      for (int existing_cluster = 0; existing_cluster < cluster; existing_cluster++) {
+    for (uint16_t i = 0; i < recv_buf.size(); i++) {
+      uint16_t d, closest_distance = 0xFF;
+      for (uint8_t existing_cluster = 0; existing_cluster < cluster; existing_cluster++) {
         d = KmeansDistance(recv_buf[i], means[existing_cluster]);
         if (d < closest_distance) {
           closest_distance = d;
@@ -104,26 +103,26 @@ void KmeansSelectStartingCentroids(int k, int* means) {
   }
 }
 
-void Kmeans(CircularBuffer<int, RECV_BUFFER_SIZE>* buf, int k, int *means) {
-  long *totals = (long *)malloc(k * sizeof(long));
-  int *counts = (int *)malloc(k * sizeof(int));
+void Kmeans(CircularBuffer<uint16_t, RECV_BUFFER_SIZE>* buf, uint8_t k, uint16_t *means) {
+  uint32_t *totals = (uint32_t *)malloc(k * sizeof(uint32_t));
+  uint16_t *counts = (uint16_t *)malloc(k * sizeof(uint16_t));
 
   KmeansSelectStartingCentroids(k, means);
 
-  int same_means_as_last_time;
+  bool same_means_as_last_time;
   do {
     // Recompute the means by going through all the values and seeing which
     // cluster they're closest to.  Then recompute the mean of each cluster
     // to hopefully move it to a more representative center point.
-    for (int i = 0; i < k; i++) {
+    for (uint8_t i = 0; i < k; i++) {
       totals[i] = counts[i] = 0;
     }
-    for (int i = 0; i < buf->size(); i++) {
+    for (uint16_t i = 0; i < buf->size(); i++) {
       // Determine which cluster this item is closest to
-      int closest_cluster = INT_MAX;
-      int closest_cluster_distance = INT_MAX;
-      for (int cluster = 0; cluster < k; cluster++) {
-        int distance = KmeansDistance((*buf)[i], means[cluster]);
+      uint8_t closest_cluster = 0xFF;
+      uint16_t closest_cluster_distance = 0xFF;
+      for (uint8_t cluster = 0; cluster < k; cluster++) {
+        uint16_t distance = KmeansDistance((*buf)[i], means[cluster]);
         if (distance < closest_cluster_distance) {
           closest_cluster = cluster;
           closest_cluster_distance = distance;
@@ -137,8 +136,8 @@ void Kmeans(CircularBuffer<int, RECV_BUFFER_SIZE>* buf, int k, int *means) {
 
     // Having finished with all the items, we now compute the new means
     same_means_as_last_time = true;
-    for (int i = 0; i < k; i++) {
-      int new_mean = totals[i] / counts[i];
+    for (uint8_t i = 0; i < k; i++) {
+      uint16_t new_mean = totals[i] / counts[i];
       if (new_mean != means[i]) {
         same_means_as_last_time = false;
       }
@@ -164,24 +163,24 @@ void TakeReading() {
 ////////////////////////////////////////////////////////////////////////////////
 // HIGH LEVEL FUNCTIONALITY
 ////////////////////////////////////////////////////////////////////////////////
-int ComputeSplit() {
+uint16_t ComputeSplit() {
   // Using Kmeans, find a reasonable "split" light level to determine
   // if the incoming bit is a 1 or a 0.
-  int *means = (int *)malloc(2 * sizeof(int));
+  uint16_t *means = (uint16_t *)malloc(2 * sizeof(uint16_t));
   Kmeans(&recv_buf, 2, means);
-  int split = (means[0] + means[1]) / 2;
+  uint16_t split = (means[0] + means[1]) / 2;
   free(means);
   return split;
 }
 
-int DetectHandshake(int split) {
+int16_t DetectHandshake(uint16_t split) {
   // First go through the working buffer and categorize each reading as a
   // zero or a one.  While doing this, the length of each pulse (all
   // contiguous ones or zeros) and store them in order, in a linked list.
   bool is_one = recv_buf[0] >= split;
-  int bit_length = 0;
-  LinkedList<int> pulse_lengths;
-  for (int i = 0; i < recv_buf.size(); i++) {
+  uint16_t bit_length = 0;
+  LinkedList<uint16_t> pulse_lengths;
+  for (uint16_t i = 0; i < recv_buf.size(); i++) {
     if (recv_buf[i] >= split) {
       if (is_one) {
         bit_length++;
@@ -216,14 +215,14 @@ int DetectHandshake(int split) {
   // allowing us to avoid using floating point as long as we divide that value
   // out later.  bitwise shifts are used for efficiency's sake.
   // Start out with the mean
-  long total = 0;
-  for (int i = 0; i < pulse_lengths.size(); i++) {
+  uint32_t total = 0;
+  for (uint16_t i = 0; i < pulse_lengths.size(); i++) {
     total += pulse_lengths.get(i);
   }
   double avg = (double)total / (double)pulse_lengths.size();
   // Next compute the std deviation
   double deviations = 0, d;
-  for (int i = 0; i < pulse_lengths.size(); i++) {
+  for (uint16_t i = 0; i < pulse_lengths.size(); i++) {
     d = (double)pulse_lengths.get(i) - avg;
     deviations += d * d;
   }
@@ -268,19 +267,16 @@ void ClearBufferAndRestartCollection() {
   Timer1.attachInterrupt(TakeReading);
 }
 
-int BlockForNextReading() {
-  int reading;
-
+uint16_t BlockForNextReading() {
+  uint16_t reading;
   while (recv_buf.isEmpty()) { delay(READING_PERIOD_US / 1000); };
-
   noInterrupts();
   reading = recv_buf.shift();
   interrupts();
-
   return reading;
 }
 
-void AlignBufferWithBitBoundaries(int split) {
+void AlignBufferWithBitBoundaries(uint16_t split) {
   // Once we've identified a handshake and figured out what the split and bit
   // length are we need to make sure that the recieve buffer is aligned with
   // bit boundaries.  This essentially means we want the first value in the
@@ -290,14 +286,16 @@ void AlignBufferWithBitBoundaries(int split) {
   Serial.print(F("Aligning readings with bit boundaries in handshake..."));
   // TODO: This seems somewhat naive to just assume the first edge I see is
   // well aligned.  Perhaps if I looked for several edges I could do better?
-  int reading, conv, value = -1;
+  uint16_t reading, converted_bit, value;
+  bool is_first_value = true;
   do {
     reading = BlockForNextReading();
-    conv = (reading >= split);
-    if (value == -1) {
-      value = conv;
+    converted_bit = (reading >= split);
+    if (is_first_value) {
+      value = converted_bit;
+      is_first_value = false;
     }
-  } while (conv == value);
+  } while (converted_bit == value);
 
   // Unshift the last reading back on (it's the start of a new bit)
   noInterrupts();
@@ -308,14 +306,15 @@ void AlignBufferWithBitBoundaries(int split) {
 }
 
 // TODO:  Make this "realign" after some drift
-int ReadNextFullBit(int bit_length, int split) {
+uint8_t ReadNextFullBit(uint16_t bit_length, uint16_t split) {
   // Read in the right number of readings to cover one whole bit and see
   // what their average light level is.  Determine if it's a 1 or a 0 and
   // return that value.
   // Note this assumes the buffer is already aligned with the bit boundaries.
-  int reading, total = 0;
+  uint16_t reading;
+  uint32_t total = 0;
 //  Serial.print(F("["));
-  for (int sample = 0; sample < bit_length; sample++) {
+  for (uint16_t sample = 0; sample < bit_length; sample++) {
     reading = BlockForNextReading();
 //    Serial.print(reading);
     if (sample < bit_length - 1) {
@@ -324,21 +323,21 @@ int ReadNextFullBit(int bit_length, int split) {
     total += reading;
   }
 //  Serial.print(F("] = "));
-  int bit = ((total / bit_length) >= split);
+  uint8_t bit = ((total / bit_length) >= split);
 //  Serial.print(bit);
 //  Serial.print(F("\n\r"));
   return bit;
 }
 
-uint8_t ReadNextFullByte(int bit_length, int split) {
+uint8_t ReadNextFullByte(uint16_t bit_length, uint16_t split) {
   uint8_t val = 0;
-  for (int i = 0; i < 8; i++) {
+  for (uint8_t i = 0; i < 8; i++) {
     val = (val << 1) | ReadNextFullBit(bit_length, split);
   }
   return val;
 }
 
-bool WaitForMagicNumber(int bit_length, int split) {
+bool WaitForMagicNumber(uint16_t bit_length, uint16_t split) {
   // This function reads in (already confirmed) handshake byte by byte and
   // checks for the end of the handshake.  This is indicated by a "magic
   // number that tells the receiver that data will be coming next.
@@ -352,7 +351,7 @@ bool WaitForMagicNumber(int bit_length, int split) {
   } else {
     Serial.print(F(KRED));
   }
-  for (int i = 7; i >= 0; i--) {
+  for (int16_t i = 7; i >= 0; i--) {
     Serial.print((rolling_value & (0x01 << i)) >> i);
   }
   Serial.print(F(RST));
@@ -366,8 +365,8 @@ bool WaitForMagicNumber(int bit_length, int split) {
   // Read in bits one at a time, until we see something that doesn't
   // Strictly alternate.  That means that bit must be part of the first byte
   // (and hopefully the Magic number)
-  int bit = rolling_value & 0x01, last_bit;
-  int count = 0;
+  uint16_t bit = rolling_value & 0x01, last_bit;
+  uint32_t count = 0;
   do {
     last_bit = bit;
     bit = ReadNextFullBit(bit_length, split);
@@ -393,7 +392,7 @@ bool WaitForMagicNumber(int bit_length, int split) {
   // starts (basically we're aligning by byte now, instead of by bit)
   Serial.println(F("Attempting to align at the byte level w/ magic number..."));
   Serial.print(F("\tCandidates:"));
-  for (int i = 0; i < 8; i++) {
+  for (uint8_t i = 0; i < 8; i++) {
     if (rolling_value == DATA_START_MAGIC_NUMBER) {
       // We've got a full magic number stored in the byte, so we're good.  We
       // now are fully byte-aligned and ready to receive the actual data.
@@ -421,7 +420,7 @@ bool WaitForMagicNumber(int bit_length, int split) {
   return false;
 }
 
-void Receive(int bit_length, int split) {
+void Receive(uint16_t bit_length, uint16_t split) {
   uint8_t len[2], crc16[2], *data;
   uint16_t message_len, data_crc16, computed_data_crc16;
   ClearBufferAndRestartCollection();
@@ -453,7 +452,7 @@ void Receive(int bit_length, int split) {
   Serial.print(message_len);
   Serial.print(F(" bytes:" RST));
   Serial.print(F(KCYN KBOLD " \""));
-  for (int i = 0; i < message_len; i++) {
+  for (uint16_t i = 0; i < message_len; i++) {
     data[i] = ReadNextFullByte(bit_length, split);
     Serial.print((char)data[i]);
   }
@@ -509,13 +508,13 @@ void loop() {
     StopCollection();
 
     // Figure out what the "split" is for a 1 or a 0
-    int split = ComputeSplit();
+    uint16_t split = ComputeSplit();
 
     // Using that "split", check to see if the log is full of equally-long
     // 0101010101 pattern.  This serves as the handshake and configures the
     // bit length.  That value is measured in the number of readings taken,
     // not directly as microseconds or something like that.
-    int bit_length = DetectHandshake(split);
+    int16_t bit_length = DetectHandshake(split);
 
     // If a handshake was detected, begin listening for a message
     if (bit_length <= 1) {
@@ -539,7 +538,7 @@ void loop() {
       Serial.print(bit_length);
       Serial.print(F(") readings\n\r"));
       Serial.println(F(FMAG("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
-      Receive(bit_length, split);
+      Receive((uint16_t)bit_length, split);
 
       Serial.print(F(FYEL("Listenining: ")));
     }
