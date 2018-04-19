@@ -11,30 +11,32 @@
 
 #define INTERMESSAGE_DELAY_MS 3000
 
-#define HANDSHAKE_LENGTH 300
+#define HANDSHAKE_LENGTH 600
 #define MAX_DATA_LENGTH 900
 
 #define LENGTH_BITS 16
 #define CRC16_BITS 16
 
-uint8_t transmission_stage;
 #define IDLE 0
 #define HANDSHAKE 1
-#define MAGIC_NUM 2
-#define LENGTH 3
-#define CSUM_LENGTH 4
-#define DATA 5
-#define CSUM_DATA 6
+#define TRANSMITTING 2
 
 // Make sure this is the same as in receiver.ino or nothing works!!
 #define DATA_START_MAGIC_NUMBER 0x0F
 
-uint32_t handshake_count;
-int8_t cycles_remaining, magic_bit;;
-int16_t data_length, data_byte;
-uint8_t data_bit, data_crc16_bit, length_bit, length_crc16_bit;
-uint8_t transmission_data[MAX_DATA_LENGTH];
-uint16_t data_crc16, length_crc16;
+#define MESSAGE_HEADER_LEN 7
+uint8_t transmission_stage;
+struct message {
+  uint8_t magic_number;
+  uint16_t data_length;
+  uint16_t length_csum;
+  uint16_t data_csum;
+  uint8_t data[MAX_DATA_LENGTH];
+} msg;
+uint16_t cycles_remaining;
+uint8_t msg_bit;
+uint16_t msg_byte;
+uint16_t msg_handshake_bits_remaining;
 volatile bool transmission_complete;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -45,47 +47,19 @@ void TimerHandler() {
     switch(transmission_stage) {
       case HANDSHAKE:
         digitalWrite(LED_PIN, !digitalRead(LED_PIN));
-        handshake_count--;
-        if (handshake_count <= 0) {
-          transmission_stage = MAGIC_NUM;
+        msg_handshake_bits_remaining--;
+        if (msg_handshake_bits_remaining <= 0) {
+          transmission_stage = TRANSMITTING;
         }
         break;
-      case MAGIC_NUM:
-        digitalWrite(LED_PIN, (DATA_START_MAGIC_NUMBER >> (7 - magic_bit)) & 0x01);
-        magic_bit++;
-        if (magic_bit >= 8) {
-          transmission_stage = LENGTH;
+      case TRANSMITTING:
+        digitalWrite(LED_PIN, (((uint8_t*)(&msg))[msg_byte] >> (7 - msg_bit)) & 0x01);
+        msg_bit++;
+        if (msg_bit >= 8) {
+          msg_bit = 0;
+          msg_byte++;
         }
-        break;
-      case LENGTH:
-        digitalWrite(LED_PIN, (data_length >> ((LENGTH_BITS - 1) - length_bit)) & 0x01);
-        length_bit++;
-        if (length_bit >= LENGTH_BITS) {
-          transmission_stage = CSUM_LENGTH;
-        }
-        break;
-      case CSUM_LENGTH:
-        digitalWrite(LED_PIN, (length_crc16 >> ((CRC16_BITS - 1) - length_crc16_bit)) & 0x01);
-        length_crc16_bit++;
-        if (length_crc16_bit >= CRC16_BITS) {
-          transmission_stage = DATA;
-        }
-        break;
-      case DATA:
-        digitalWrite(LED_PIN, (transmission_data[data_byte] >> (7 - data_bit)) & 0x01);
-        data_bit++;
-        if (data_bit >= 8) {
-          data_bit = 0;
-          data_byte++;
-        }
-        if (data_byte >= data_length) {
-          transmission_stage = CSUM_DATA;
-        }
-        break;
-      case CSUM_DATA:
-        digitalWrite(LED_PIN, (data_crc16 >> ((CRC16_BITS - 1) - data_crc16_bit)) & 0x01);
-        data_crc16_bit++;
-        if (data_crc16_bit >= CRC16_BITS) {
+        if (msg_byte >= msg.data_length + MESSAGE_HEADER_LEN) {
           transmission_stage = IDLE;
         }
         break;
@@ -106,31 +80,26 @@ void setup() {
   Timer1.initialize();
 }
 
-void Send(String msg) {
-  transmission_stage = HANDSHAKE;
-
-  handshake_count = HANDSHAKE_LENGTH;
-
-  magic_bit = 0;
-
-  data_byte = 0;
-  data_bit = 0;
-
-  strcpy((char*)transmission_data, msg.c_str());
-  data_length = strlen((char*)transmission_data);
-  data_crc16 = 0;
-  for (int i = 0; i < data_length; i++) {
-    data_crc16 = _crc16_update(data_crc16, transmission_data[i]);
+void Send(String text) {
+  // Set up the message struct
+  msg.magic_number = DATA_START_MAGIC_NUMBER;
+  msg.data_length = text.length();
+  msg.length_csum = _crc16_update(0, (msg.data_length >> 8) & 0xFF);
+  msg.length_csum = _crc16_update(msg.length_csum, msg.data_length & 0xFF);
+  strcpy(msg.data, (uint8_t*)text.c_str());
+  msg.data_csum = 0;
+  for (uint16_t i = 0; i < msg.data_length; i++) {
+    msg.data_csum = _crc16_update(msg.data_csum, msg.data[i]);
   }
-  data_crc16_bit = 0;
 
-  length_bit = 0;
-  length_crc16_bit = 0;
-  length_crc16 = _crc16_update(0, (data_length >> 8) & 0xFF);
-  length_crc16 = _crc16_update(length_crc16, data_length & 0xFF);
-
+  // Set up the state for a new message
+  transmission_stage = HANDSHAKE;
+  msg_handshake_bits_remaining = HANDSHAKE_LENGTH;
+  msg_bit = msg_byte = 0;
+  cycles_remaining = 0;
   transmission_complete = false;
 
+  // Kick off the transmission
   Timer1.setPeriod(ISR_PERIOD_US);
   Timer1.attachInterrupt(TimerHandler);
 
@@ -146,5 +115,7 @@ void loop() {
   Send("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam id viverra sapien. Suspendisse vel mollis urna. Nullam convallis nisl nec rhoncus consectetur. Aenean nec enim sodales, egestas mauris eget, congue nisl. Quisque blandit vitae risus in aliquet.  That's over 255 chars.  Does it still work?  What if it's way way way way longer?  Will it still work then?");
   delay(INTERMESSAGE_DELAY_MS);
   Send("Final transmission");
+  delay(INTERMESSAGE_DELAY_MS);
+  Send("One more different message, just to test a bit more variety!  This ones in the middle length-wise...");
   delay(INTERMESSAGE_DELAY_MS);
 }

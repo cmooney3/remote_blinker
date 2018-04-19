@@ -339,8 +339,8 @@ uint8_t ReadNextFullByte(uint16_t bit_length, uint16_t split) {
 }
 
 uint16_t Read16BitInt(uint16_t bit_length, uint16_t split) {
-  uint8_t byte1 = ReadNextFullByte(bit_length, split);
   uint8_t byte0 = ReadNextFullByte(bit_length, split);
+  uint8_t byte1 = ReadNextFullByte(bit_length, split);
   return (byte1 << 8) | byte0;
 }
 
@@ -476,6 +476,12 @@ void Receive(uint16_t bit_length, uint16_t split) {
     goto abort;
   }
 
+  // Read in the checksum for the data (CRC16) and confirm it's OK
+  data_crc16 = Read16BitInt(bit_length, split);
+  Serial.print(F("Received CRC16 for data = 0x"));
+  Serial.print(data_crc16, HEX);
+  Serial.print(F("\n\r"));
+
   // Collect the actual bits themselves.
   data = (uint8_t*)malloc(sizeof(uint8_t) * message_len);
   Serial.print(F(KGRN "Receiving "));
@@ -488,11 +494,7 @@ void Receive(uint16_t bit_length, uint16_t split) {
   }
   Serial.print(F("\"" RST "\n\r"));
 
-  // Read in the checksum for the data (CRC16) and confirm it's OK
-  data_crc16 = Read16BitInt(bit_length, split);
-  Serial.print(F("Received CRC16 for data = 0x"));
-  Serial.print(data_crc16, HEX);
-  Serial.print(F("\n\r"));
+  // Confirm that the data's checksum matches the one we received
   computed_data_crc16 = 0;
   for (int i = 0; i < message_len; i++) {
     computed_data_crc16 = _crc16_update(computed_data_crc16, data[i]);
