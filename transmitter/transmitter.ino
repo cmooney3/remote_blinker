@@ -5,7 +5,7 @@
 #include <TimerOne.h>
 
 #define LED_PIN 6
-#define ISR_PERIOD_US 50
+#define ISR_PERIOD_US 30
 
 #define BIT_LENGTH 110
 
