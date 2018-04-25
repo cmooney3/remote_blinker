@@ -13,14 +13,16 @@
 #define ERROR_LED_PIN 4
 #define LIGHT_SENSOR_PIN 0
 
-#define READING_PERIOD_US 300
-#define RECV_BUFFER_SIZE 600
+#define READING_PERIOD_US 150
+#define RECV_BUFFER_SIZE 400
 
 #define HANDSHAKE_MIN_PULSES 15
 
 // This shouldn't start with 0b01 or 0b10 since that pattern is found in the
 // handshake, and could cause misalignment issues.  Start with 0b00 or 0b11
 #define DATA_START_MAGIC_NUMBER 0x0F
+
+#define HANDSHAKE_ANIMATION_INTERVAL 23
 
 ////////////////////////////////////////////////////////////////////////////////
 // ERROR CODES
@@ -251,7 +253,7 @@ int16_t DetectHandshake(uint16_t split) {
   // else we just assume it's random flickering -- plus we use that timing
   // for our bit length later, so if it's not reliable here, we'll likely
   // have transmission errors later on either way.
-  if (std_dev > avg * 0.05) {
+  if (std_dev > avg * 0.10) {
     return -EHIGHSTDDEV;
   }
 
@@ -266,6 +268,12 @@ void ClearBufferAndRestartCollection() {
   recv_buf.clear_no_memset();  // This was a hack added by me into their lib
   Timer1.setPeriod(READING_PERIOD_US);
   Timer1.attachInterrupt(TakeReading);
+}
+
+void PutReadingBack(uint16_t reading) {
+  noInterrupts();
+  recv_buf.unshift(reading);
+  interrupts();
 }
 
 uint16_t BlockForNextReading() {
@@ -306,34 +314,66 @@ void AlignBufferWithBitBoundaries(uint16_t split) {
   Serial.print(F(FGRN("\tDONE\n\r")));
 }
 
-// TODO:  Make this "realign" after some drift
-uint8_t ReadNextFullBit(uint16_t bit_length, uint16_t split) {
+bool ConvertReading(uint16_t reading, uint16_t split) {
+  return reading >= split;
+}
+
+bool ReadNextFullBit(uint16_t bit_length, uint16_t split) {
   // Read in the right number of readings to cover one whole bit and see
   // what their average light level is.  Determine if it's a 1 or a 0 and
   // return that value.
   // Note this assumes the buffer is already aligned with the bit boundaries.
-  uint16_t reading;
+  uint16_t readings[bit_length];
   uint32_t total = 0;
-//  Serial.print(F("["));
-  for (uint16_t sample = 0; sample < bit_length; sample++) {
-    reading = BlockForNextReading();
-//    Serial.print(reading);
-    if (sample < bit_length - 1) {
-//      Serial.print(F(" "));
-    }
-    total += reading;
+  for (uint16_t i = 0; i < bit_length; i++) {
+    readings[i] = BlockForNextReading();
+    total += readings[i];
   }
-//  Serial.print(F("] = "));
-  uint8_t bit = ((total / bit_length) >= split);
-//  Serial.print(bit);
-//  Serial.print(F("\n\r"));
+  bool bit = ConvertReading((total / bit_length), split);
+
+  // Try to "realign" the bit boundaries if there are some stray readings on
+  // either end.  This combats drift by fixing it when we can pick up on it.
+  // Obviously this only works on 1/0 or 0/1 boundaries, but when those
+  // occur we can try to get back on track and if the data is reasonably
+  // distributed, this should work for a long time.
+  // First check if any of the first readings were of the wrong "bit" -- if
+  // this is true, we should try to consume a few more readings to realign.
+  uint16_t pos = 0; 
+  while (ConvertReading(readings[pos], split) != bit) {
+    pos++;
+  }
+  if (pos > 0) {
+    // If any of the readings at the beginning of the bit don't agree with
+    // the majority, we should pull an equal amount of additional readings.
+    // If those readings don't match the majority, just put them back (we
+    // probably weren't actually drifting) otherwise consume them to shift
+    // our bit boundary slightly forwards.
+    for (uint8_t i = 0; i < pos; i++) {
+      int16_t new_reading = BlockForNextReading();
+      // This this reading is a different value, put it back and stop
+      if (ConvertReading(new_reading, split) != bit) {
+        PutReadingBack(new_reading);
+        break;
+      }
+    }
+  } else {
+    // Next, if there's no drift at the beginning of the bit, check if any
+    // of the last readings should get "put back" because they really should
+    // be part of the next bit.
+    pos = bit_length - 1;
+    while (ConvertReading(readings[pos], split) != bit) {
+      PutReadingBack(readings[pos]);
+      pos--;
+    }
+  }
+
   return bit;
 }
 
 uint8_t ReadNextFullByte(uint16_t bit_length, uint16_t split) {
   uint8_t val = 0;
   for (uint8_t i = 0; i < 8; i++) {
-    val = (val << 1) | ReadNextFullBit(bit_length, split);
+    val = (val << 1) | (uint8_t)ReadNextFullBit(bit_length, split);
   }
   return val;
 }
@@ -361,8 +401,7 @@ bool WaitForMagicNumber(uint16_t bit_length, uint16_t split) {
   for (int16_t i = 7; i >= 0; i--) {
     Serial.print((rolling_value & (0x01 << i)) >> i);
   }
-  Serial.print(F(RST));
-  Serial.print(F(" "));
+  Serial.print(F(RST "\n\r"));
   if (rolling_value != 0b01010101 && rolling_value != 0b10101010) {
     Serial.print(F("\n\r"));
     Serial.println(F(FRED("Invalid bits after intital handshake detection.")));
@@ -372,21 +411,24 @@ bool WaitForMagicNumber(uint16_t bit_length, uint16_t split) {
   // Read in bits one at a time, until we see something that doesn't
   // Strictly alternate.  That means that bit must be part of the first byte
   // (and hopefully the Magic number)
-  uint16_t bit = rolling_value & 0x01, last_bit;
+  bool bit = (bool)(rolling_value & 0x01), last_bit;
   uint32_t count = 0;
+  char sprites[] = {'|', '/', '-', '\\', '|', '/', '-', '\\'};
+  uint8_t anim_frame = 0, num_sprites = sizeof(sprites) / sizeof(sprites[0]);
   do {
     last_bit = bit;
     bit = ReadNextFullBit(bit_length, split);
-    rolling_value = (rolling_value << 1) | bit;
-
-    if (last_bit != bit) {
-      Serial.print(F(KGRN));
-    } else {
-      Serial.print(F(KRED));
-    }
-    Serial.print(bit);
-    Serial.print(F(RST));
+    rolling_value = (rolling_value << 1) | (uint8_t)bit;
     count++;
+
+    if (count % HANDSHAKE_ANIMATION_INTERVAL == 0) {
+      Serial.print(F("\r"));
+      Serial.print(sprites[anim_frame]);
+      Serial.print(F("\t"));
+      Serial.print(count);
+      Serial.print(F(" "));
+      anim_frame = (anim_frame + 1) % num_sprites;
+    }
   } while (last_bit != bit);
   Serial.print(F("\n\rRead "));
   Serial.print(count);
@@ -417,7 +459,7 @@ bool WaitForMagicNumber(uint16_t bit_length, uint16_t split) {
       Serial.print(F(RST));
     }
     bit = ReadNextFullBit(bit_length, split);
-    rolling_value = (rolling_value << 1) | bit;
+    rolling_value = (rolling_value << 1) | (uint8_t)bit;
   }
   Serial.print(F("\n\r"));
 

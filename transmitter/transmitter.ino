@@ -5,13 +5,15 @@
 #include <TimerOne.h>
 
 #define LED_PIN 6
-#define ISR_PERIOD_US 30
 
-#define BIT_LENGTH 110
+// Define the transmission rate.
+// Rate: 1 / (8 * BIT_LENGTH * ISR_PERIOD_US / 1000000)  (bytes-per-second)
+#define ISR_PERIOD_US 15
+#define BIT_LENGTH 50
 
 #define INTERMESSAGE_DELAY_MS 3000
 
-#define HANDSHAKE_LENGTH 600
+#define HANDSHAKE_LENGTH 1000
 #define MAX_DATA_LENGTH 900
 
 #define LENGTH_BITS 16
@@ -23,6 +25,7 @@
 
 // Make sure this is the same as in receiver.ino or nothing works!!
 #define DATA_START_MAGIC_NUMBER 0x0F
+
 
 #define MESSAGE_HEADER_LEN 7
 uint8_t transmission_stage;
@@ -36,7 +39,7 @@ struct message {
 uint16_t cycles_remaining;
 uint8_t msg_bit;
 uint16_t msg_byte;
-uint16_t msg_handshake_bits_remaining;
+uint32_t msg_handshake_bits_remaining;
 volatile bool transmission_complete;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -73,20 +76,13 @@ void TimerHandler() {
   cycles_remaining--;
 }
 
-void setup() {
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
-
-  Timer1.initialize();
-}
-
-void Send(String text) {
+void Send(const char* text) {
   // Set up the message struct
   msg.magic_number = DATA_START_MAGIC_NUMBER;
-  msg.data_length = text.length();
+  msg.data_length = strlen(text);
   msg.length_csum = _crc16_update(0, (msg.data_length >> 8) & 0xFF);
   msg.length_csum = _crc16_update(msg.length_csum, msg.data_length & 0xFF);
-  strcpy(msg.data, (uint8_t*)text.c_str());
+  strcpy((char*)msg.data, text);
   msg.data_csum = 0;
   for (uint16_t i = 0; i < msg.data_length; i++) {
     msg.data_csum = _crc16_update(msg.data_csum, msg.data[i]);
@@ -109,13 +105,16 @@ void Send(String text) {
   }
 }
 
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+
+  Timer1.initialize();
+}
+
 void loop() {
   Send("This is a test... Working?");
   delay(INTERMESSAGE_DELAY_MS);
-  Send("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam id viverra sapien. Suspendisse vel mollis urna. Nullam convallis nisl nec rhoncus consectetur. Aenean nec enim sodales, egestas mauris eget, congue nisl. Quisque blandit vitae risus in aliquet.  That's over 255 chars.  Does it still work?  What if it's way way way way longer?  Will it still work then?");
-  delay(INTERMESSAGE_DELAY_MS);
-  Send("Final transmission");
-  delay(INTERMESSAGE_DELAY_MS);
-  Send("One more different message, just to test a bit more variety!  This ones in the middle length-wise...");
+  Send("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis malesuada sapien eu mollis facilisis. Pellentesque vitae sodales nunc. Vestibulum eleifend convallis placerat. Morbi nec enim vel enim sollicitudin faucibus eu et orci. Donec a ornare justo. Vivamus ullamcorper vulputate justo, ac posuere massa finibus ac. Donec a sapien odio. Interdum et malesuada fames ac ante ipsum primis in faucibus. Ut sollicitudin quis orci ut volutpat. Aenean et sagittis libero. Aenean mollis convallis leo, id ultrices est scelerisque non.  Morbi euismod elementum malesuada. Maecenas pellentesque eu orci eu scelerisque. Ut sollicitudin quis orci ut volutpat. Aenean et sagittis libero. Aenean mollis convallis leo, id ultrices est scelerisque non.  Morbi euismod elementum malesuada. Maecenas pellentesque eu orci eu scelerisque.");
   delay(INTERMESSAGE_DELAY_MS);
 }
