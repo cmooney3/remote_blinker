@@ -1,5 +1,6 @@
 #include <util/crc16.h>
 
+#include <Adafruit_NeoPixel.h>
 #include <CircularBuffer.h>
 #include <limits.h>
 #include <LinkedList.h>
@@ -14,15 +15,25 @@
 #define LIGHT_SENSOR_PIN 0
 
 #define READING_PERIOD_US 150
-#define RECV_BUFFER_SIZE 400
+#define RECV_BUFFER_SIZE 300
 
 #define HANDSHAKE_MIN_PULSES 15
+
+#define NEOPIXEL_PIN 9
+#define NUM_NEOPIXELS 8
+Adafruit_NeoPixel leds(NUM_NEOPIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
+
 
 // This shouldn't start with 0b01 or 0b10 since that pattern is found in the
 // handshake, and could cause misalignment issues.  Start with 0b00 or 0b11
 #define DATA_START_MAGIC_NUMBER 0x0F
 
 #define HANDSHAKE_ANIMATION_INTERVAL 23
+#define COLOR_OFF leds.Color(0, 0, 0)
+#define COLOR_HANDSHAKE leds.Color(255, 255, 0)
+#define COLOR_RECEIVING leds.Color(0, 255, 255)
+#define COLOR_SUCCESS leds.Color(0, 255, 0)
+#define COLOR_FAIL leds.Color(255, 0, 0)
 
 ////////////////////////////////////////////////////////////////////////////////
 // ERROR CODES
@@ -30,6 +41,11 @@
 #define ENOTENOUGHPULSES 1
 #define EHIGHSTDDEV 2
 #define EBADCHECKSUM 3
+
+#define STATUS_LOST_HANDSHAKE 1
+#define STATUS_BAD_LENGTH 2
+#define STATUS_BAD_CHECKSUM 3
+#define STATUS_SUCCESS 4
 
 ////////////////////////////////////////////////////////////////////////////////
 // MACROS FOR TEXT FORMATTING (usefull while debugging, but not essential)
@@ -499,7 +515,8 @@ uint16_t ReadInLength(uint16_t bit_length, uint16_t split) {
   }
 }
 
-void Receive(uint16_t bit_length, uint16_t split) {
+uint8_t Receive(uint16_t bit_length, uint16_t split) {
+  uint8_t status;
   uint8_t *data;
   uint16_t data_crc16, computed_data_crc16;
   int16_t message_len;
@@ -510,11 +527,14 @@ void Receive(uint16_t bit_length, uint16_t split) {
 
   // Now wait until the data actually starts to arrive
   if (!WaitForMagicNumber(bit_length, split)) {
+    status = STATUS_LOST_HANDSHAKE;
     goto abort;
   }
 
+  setBeaconColor(COLOR_RECEIVING);
   message_len = ReadInLength(bit_length, split);
   if (message_len < 0) {
+    status = STATUS_BAD_LENGTH;
     goto abort;
   }
 
@@ -547,9 +567,11 @@ void Receive(uint16_t bit_length, uint16_t split) {
   if (computed_data_crc16 == data_crc16) {
     Serial.print(F(FGRN("SUCCESS")));
     Serial.print(F(" -- data checksums match"));
+    status = STATUS_SUCCESS;
   } else {
     Serial.print(F(FRED("FAILED")));
     Serial.print(F(" -- data checksums do not match!"));
+    status = STATUS_BAD_CHECKSUM;
   }
   Serial.print(F("\n\r"));
 
@@ -558,9 +580,21 @@ void Receive(uint16_t bit_length, uint16_t split) {
 abort:
   Serial.print(F("\n\r"));
   StopCollection();
+
+  return status;
+}
+
+void setBeaconColor(uint32_t c) {
+  for (int i = 0; i < NUM_NEOPIXELS; i++) {
+    leds.setPixelColor(i, c);
+  }
+  leds.show();
 }
 
 void setup() {
+  leds.begin();
+  setBeaconColor(COLOR_OFF);
+
   Serial.begin(BAUD_RATE);
 
   pinMode(ERROR_LED_PIN, OUTPUT);
@@ -599,6 +633,8 @@ void loop() {
       //}
       //Serial.print(F("\n\r"));
     } else {
+      setBeaconColor(COLOR_HANDSHAKE);
+
       Serial.print(F("\n\r\n\r"));
       Serial.println(F(FMAG("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
       Serial.print(F(FMAG("X Handshake detected!")));
@@ -606,7 +642,20 @@ void loop() {
       Serial.print(bit_length);
       Serial.print(F(" readings)\n\r"));
       Serial.println(F(FMAG("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
-      Receive((uint16_t)bit_length, split);
+
+      uint8_t status = Receive((uint16_t)bit_length, split);
+
+      if (status != STATUS_LOST_HANDSHAKE) {
+        // Display to the transmitter if the message was successfully received or not by blinking an indicator color
+        uint32_t color = (status == STATUS_SUCCESS) ? COLOR_SUCCESS : COLOR_FAIL;
+        setBeaconColor(color);
+        for (int i = 0; i < 5; i++) {
+          delay(200);
+          setBeaconColor(color);
+          delay(200);
+          setBeaconColor(COLOR_OFF);
+        }
+      }
 
       Serial.print(F(FYEL("Listenining: ")));
     }
