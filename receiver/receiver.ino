@@ -17,7 +17,7 @@
 #define READING_PERIOD_US 150
 #define RECV_BUFFER_SIZE 300
 
-#define HANDSHAKE_MIN_PULSES 15
+#define HANDSHAKE_MIN_PULSES 10
 
 #define NEOPIXEL_PIN 9
 #define NUM_NEOPIXELS 8
@@ -29,6 +29,7 @@ Adafruit_NeoPixel leds(NUM_NEOPIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 #define DATA_START_MAGIC_NUMBER 0x0F
 
 #define HANDSHAKE_ANIMATION_INTERVAL 23
+#define MAX_REALIGNMENT_SHIFT 2
 
 #define RESPONSE_BLINK_TIME_MS 150
 #define COLOR_OFF leds.Color(0, 0, 0)
@@ -366,7 +367,7 @@ bool ReadNextFullBit(uint16_t bit_length, uint16_t split) {
     // If those readings don't match the majority, just put them back (we
     // probably weren't actually drifting) otherwise consume them to shift
     // our bit boundary slightly forwards.
-    for (uint8_t i = 0; i < pos; i++) {
+    for (uint8_t i = 0; i < pos && i << MAX_REALIGNMENT_SHIFT; i++) {
       int16_t new_reading = BlockForNextReading();
       // This this reading is a different value, put it back and stop
       if (ConvertReading(new_reading, split) != bit) {
@@ -379,7 +380,8 @@ bool ReadNextFullBit(uint16_t bit_length, uint16_t split) {
     // of the last readings should get "put back" because they really should
     // be part of the next bit.
     pos = bit_length - 1;
-    while (ConvertReading(readings[pos], split) != bit) {
+    while (ConvertReading(readings[pos], split) != bit &&
+           pos >= bit_length - MAX_REALIGNMENT_SHIFT) {
       PutReadingBack(readings[pos]);
       pos--;
     }
