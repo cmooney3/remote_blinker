@@ -9,7 +9,7 @@
 // Define the transmission rate.
 // Rate: 1 / (8 * BIT_LENGTH * ISR_PERIOD_US / 1000000)  (bytes-per-second)
 #define ISR_PERIOD_US 15
-#define BIT_LENGTH 90
+#define BIT_LENGTH 50
 
 #define INTERMESSAGE_DELAY_MS 10000
 
