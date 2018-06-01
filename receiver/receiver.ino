@@ -29,8 +29,6 @@ Adafruit_NeoPixel leds(NUM_NEOPIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 #define DATA_START_MAGIC_NUMBER 0x0F
 
 #define HANDSHAKE_ANIMATION_INTERVAL 23
-
-#define RESPONSE_BLINK_TIME_MS 150
 #define COLOR_OFF leds.Color(0, 0, 0)
 #define COLOR_HANDSHAKE leds.Color(255, 255, 0)
 #define COLOR_RECEIVING leds.Color(0, 255, 255)
@@ -533,7 +531,7 @@ uint8_t Receive(uint16_t bit_length, uint16_t split) {
     goto abort;
   }
 
-  //setBeaconColor(COLOR_RECEIVING);  //TODO: turn the LED on to indicate it's receiving without screwing up the readings
+  setBeaconColor(COLOR_RECEIVING);
   message_len = ReadInLength(bit_length, split);
   if (message_len < 0) {
     status = STATUS_BAD_LENGTH;
@@ -647,24 +645,18 @@ void loop() {
 
       uint8_t status = Receive((uint16_t)bit_length, split);
 
-      if (status == STATUS_LOST_HANDSHAKE) {
-          setBeaconColor(COLOR_FAIL);
-          delay(RESPONSE_BLINK_TIME_MS);
-      } else {
+      if (status != STATUS_LOST_HANDSHAKE) {
         // Display to the transmitter if the message was successfully received or not by blinking an indicator color
         uint32_t color = (status == STATUS_SUCCESS) ? COLOR_SUCCESS : COLOR_FAIL;
         setBeaconColor(color);
         for (int i = 0; i < 5; i++) {
-          delay(RESPONSE_BLINK_TIME_MS);
+          delay(200);
           setBeaconColor(color);
-          delay(RESPONSE_BLINK_TIME_MS);
+          delay(200);
           setBeaconColor(COLOR_OFF);
         }
-        setBeaconColor(color);
-        delay(RESPONSE_BLINK_TIME_MS * 3);
       }
 
-      setBeaconColor(COLOR_OFF);
       Serial.print(F(FYEL("Listenining: ")));
     }
 
