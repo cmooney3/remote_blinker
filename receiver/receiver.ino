@@ -260,8 +260,12 @@ int16_t DetectHandshake(uint16_t split) {
   return round(avg);
 }
 
-void StopCollection() {
+void inline StopCollection() {
   Timer1.detachInterrupt();
+}
+
+void inline RestartCollection() {
+  Timer1.attachInterrupt(TakeReading);
 }
 
 void ClearBufferAndRestartCollection() {
@@ -270,18 +274,18 @@ void ClearBufferAndRestartCollection() {
   Timer1.attachInterrupt(TakeReading);
 }
 
-void PutReadingBack(uint16_t reading) {
-  noInterrupts();
+void PutReadingBack(uint16_t reading) {  // TODO: Does this really work!? It seems like there might be other readings slipping into the buffer between.  Do you need to defer interrupts between the time you made this reading and when you return it?  Seems like it maybe....
+  StopCollection();
   recv_buf.unshift(reading);
-  interrupts();
+  RestartCollection();
 }
 
 uint16_t BlockForNextReading() {
   uint16_t reading;
   while (recv_buf.isEmpty()) { delay(READING_PERIOD_US / 1000); };
-  noInterrupts();
+  StopCollection();
   reading = recv_buf.shift();
-  interrupts();
+  RestartCollection();
   return reading;
 }
 
@@ -307,14 +311,12 @@ void AlignBufferWithBitBoundaries(uint16_t split) {
   } while (converted_bit == value);
 
   // Unshift the last reading back on (it's the start of a new bit)
-  noInterrupts();
-  recv_buf.unshift(reading);
-  interrupts();
+  PutReadingBack(reading);
 
   Serial.print(F(FGRN("\tDONE\n\r")));
 }
 
-bool ConvertReading(uint16_t reading, uint16_t split) {
+bool inline ConvertReading(uint16_t reading, uint16_t split) {
   return reading >= split;
 }
 
