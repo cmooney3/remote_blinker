@@ -4,16 +4,16 @@
 #include <limits.h>
 #include <TimerOne.h>
 
-#define LASER_PIN 6
+#define LED_PIN 6
 
 // Define the transmission rate.
 // Rate: 1 / (8 * BIT_LENGTH * ISR_PERIOD_US / 1000000)  (bytes-per-second)
 #define ISR_PERIOD_US 15
 #define BIT_LENGTH 50
 
-#define INTERMESSAGE_DELAY_MS 10000
+#define INTERMESSAGE_DELAY_MS 3000
 
-#define HANDSHAKE_LENGTH 5000
+#define HANDSHAKE_LENGTH 1000
 #define MAX_DATA_LENGTH 900
 
 #define LENGTH_BITS 16
@@ -49,14 +49,14 @@ void TimerHandler() {
   if (!cycles_remaining) {
     switch(transmission_stage) {
       case HANDSHAKE:
-        digitalWrite(LASER_PIN, !digitalRead(LASER_PIN));
+        digitalWrite(LED_PIN, !digitalRead(LED_PIN));
         msg_handshake_bits_remaining--;
         if (msg_handshake_bits_remaining <= 0) {
           transmission_stage = TRANSMITTING;
         }
         break;
       case TRANSMITTING:
-        digitalWrite(LASER_PIN, (((uint8_t*)(&msg))[msg_byte] >> (7 - msg_bit)) & 0x01);
+        digitalWrite(LED_PIN, (((uint8_t*)(&msg))[msg_byte] >> (7 - msg_bit)) & 0x01);
         msg_bit++;
         if (msg_bit >= 8) {
           msg_bit = 0;
@@ -103,12 +103,11 @@ void Send(const char* text) {
   while (!transmission_complete) {
     delay(100);
   }
-  digitalWrite(LASER_PIN, LOW);
 }
 
 void setup() {
-  pinMode(LASER_PIN, OUTPUT);
-  digitalWrite(LASER_PIN, LOW);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
 
   Timer1.initialize();
 }
@@ -116,6 +115,6 @@ void setup() {
 void loop() {
   Send("This is a test... Working?");
   delay(INTERMESSAGE_DELAY_MS);
-  Send("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis malesuada sapien eu mollis facilisis. Pellentesque vitae sodales nunc. Vestibulum eleifend convallis placerat. Morbi nec enim vel enim sollicitudin faucibus eu et orci. Donec a ornare justo. Vivamus ullamcorper vulputate justo, ac posuere massa finibus ac. Donec a sapien odio.");// Interdum et malesuada fames ac ante ipsum primis in faucibus. Ut sollicitudin quis orci ut volutpat. Aenean et sagittis libero. Aenean mollis convallis leo, id ultrices est scelerisque non.  Morbi euismod elementum malesuada. Maecenas pellentesque eu orci eu scelerisque. Ut sollicitudin quis orci ut volutpat. Aenean et sagittis libero. Aenean mollis convallis leo, id ultrices est scelerisque non.  Morbi euismod elementum malesuada. Maecenas pellentesque eu orci eu scelerisque.");
+  Send("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis malesuada sapien eu mollis facilisis. Pellentesque vitae sodales nunc. Vestibulum eleifend convallis placerat. Morbi nec enim vel enim sollicitudin faucibus eu et orci. Donec a ornare justo. Vivamus ullamcorper vulputate justo, ac posuere massa finibus ac. Donec a sapien odio. Interdum et malesuada fames ac ante ipsum primis in faucibus. Ut sollicitudin quis orci ut volutpat. Aenean et sagittis libero. Aenean mollis convallis leo, id ultrices est scelerisque non.  Morbi euismod elementum malesuada. Maecenas pellentesque eu orci eu scelerisque. Ut sollicitudin quis orci ut volutpat. Aenean et sagittis libero. Aenean mollis convallis leo, id ultrices est scelerisque non.  Morbi euismod elementum malesuada. Maecenas pellentesque eu orci eu scelerisque.");
   delay(INTERMESSAGE_DELAY_MS);
 }
