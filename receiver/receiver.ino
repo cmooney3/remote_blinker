@@ -265,7 +265,7 @@ void StopCollection() {
 }
 
 void ClearBufferAndRestartCollection() {
-  recv_buf.clear_no_memset();  // This was a hack added by me into their lib
+  recv_buf.clear();
   Timer1.setPeriod(READING_PERIOD_US);
   Timer1.attachInterrupt(TakeReading);
 }
