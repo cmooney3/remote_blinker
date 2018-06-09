@@ -5,6 +5,8 @@
 #include <LinkedList.h>
 #include <TimerOne.h>
 
+#include "FastLED.h"
+
 ////////////////////////////////////////////////////////////////////////////////
 // BASIC CONFIGURATION PARAMETERS
 ////////////////////////////////////////////////////////////////////////////////
@@ -14,7 +16,7 @@
 #define LIGHT_SENSOR_PIN 0
 
 #define READING_PERIOD_US 150
-#define RECV_BUFFER_SIZE 400
+#define RECV_BUFFER_SIZE 300
 
 #define HANDSHAKE_MIN_PULSES 15
 
@@ -23,6 +25,19 @@
 #define DATA_START_MAGIC_NUMBER 0x0F
 
 #define HANDSHAKE_ANIMATION_INTERVAL 23
+
+#define NUM_LEDS 10
+CRGB leds[NUM_LEDS];
+#define LED_DATA_PIN 8
+#define LED_CLOCK_PIN 9
+
+#define RESPONSE_BLINK_TIME_MS 200
+
+#define COLOR_OFF CRGB::Black
+#define COLOR_HANDSHAKE CRGB::Yellow
+#define COLOR_RECEIVING CRGB::Chartreuse
+#define COLOR_SUCCESS CRGB::Green
+#define COLOR_FAILURE CRGB::Red
 
 ////////////////////////////////////////////////////////////////////////////////
 // ERROR CODES
@@ -468,6 +483,7 @@ bool WaitForMagicNumber(uint16_t bit_length, uint16_t split) {
   // If that loop ends, that means we never found the magic number and somethig
   // is wrong.
   Serial.println(F(FRED("\tFAILURE, the handshake ended, but no magic number found!\n\r")));
+  setBeaconColor(COLOR_FAILURE);
   return false;
 }
 
@@ -512,11 +528,16 @@ void Receive(uint16_t bit_length, uint16_t split) {
 
   // Now wait until the data actually starts to arrive
   if (!WaitForMagicNumber(bit_length, split)) {
+    setBeaconColor(COLOR_FAILURE);
+    //delay(RESPONSE_BLINK_TIME_MS);
     goto abort;
   }
+  setBeaconColor(COLOR_RECEIVING);
 
   message_len = ReadInLength(bit_length, split);
   if (message_len < 0) {
+    setBeaconColor(COLOR_FAILURE);
+    //delay(RESPONSE_BLINK_TIME_MS);
     goto abort;
   }
 
@@ -562,7 +583,17 @@ abort:
   StopCollection();
 }
 
+void setBeaconColor(CRGB color) {
+  for (uint16_t i = 0; i < NUM_LEDS; i++) {
+    leds[i] = color;
+  }
+  FastLED.show();
+}
+
 void setup() {
+  FastLED.addLeds<APA102, LED_DATA_PIN, LED_CLOCK_PIN, BGR>(leds, NUM_LEDS);
+  setBeaconColor(COLOR_OFF);
+
   Serial.begin(BAUD_RATE);
 
   pinMode(ERROR_LED_PIN, OUTPUT);
@@ -608,7 +639,10 @@ void loop() {
       Serial.print(bit_length);
       Serial.print(F(" readings)\n\r"));
       Serial.println(F(FMAG("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
+
+      setBeaconColor(COLOR_HANDSHAKE);
       Receive((uint16_t)bit_length, split);
+      setBeaconColor(COLOR_OFF);
 
       Serial.print(F(FYEL("Listenining: ")));
     }
