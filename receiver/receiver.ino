@@ -33,8 +33,10 @@ CRGB leds[NUM_LEDS];
 #define LED_CLOCK_PIN 9
 
 #define RESPONSE_BLINK_TIME_MS 200
+#define STARTUP_INDICATOR_TIME_MS 750
 
 #define COLOR_OFF CRGB::Black
+#define COLOR_STARTUP CRGB::Magenta
 #define COLOR_HANDSHAKE CRGB::Yellow
 #define COLOR_RECEIVING CRGB::Chartreuse
 #define COLOR_SUCCESS CRGB::Green
@@ -593,17 +595,29 @@ void setBeaconColor(CRGB color) {
     leds[i] = color;
   }
   FastLED.show();
+  wdt_reset();
+}
+
+void blinkBeacon(CRGB color, uint16_t duration_ms) {
+  setBeaconColor(color);
+  delay(duration_ms);
+  wdt_reset();
 }
 
 void setup() {
+  // Initialize the Beacon's LEDS, and blink them to make a reboot visible.
   FastLED.addLeds<APA102, LED_DATA_PIN, LED_CLOCK_PIN, BGR>(leds, NUM_LEDS);
+  setBeaconColor(COLOR_STARTUP);
+  delay(STARTUP_INDICATOR_TIME_MS);
   setBeaconColor(COLOR_OFF);
 
   Serial.begin(BAUD_RATE);
 
+  // Configure the GPIO as output that's connected to the "overflow" error LED
   pinMode(ERROR_LED_PIN, OUTPUT);
   digitalWrite(ERROR_LED_PIN, LOW);
 
+  // Set up the timer ISR to collect readings (for checking for handshakes, etc)
   Timer1.initialize();
   ClearBufferAndRestartCollection();
 
@@ -654,19 +668,16 @@ void loop() {
       setBeaconColor(COLOR_HANDSHAKE);
       uint8_t status = Receive((uint16_t)bit_length, split);
       if (status == STATUS_LOST_HANDSHAKE) {
-          setBeaconColor(COLOR_FAILURE);
-          delay(STATUS_BLINK_LENGTH_MS / 2);  // Only blink very briefly so it can reaquire the handshake if possible
+        // Only blink very briefly so it can reaquire the handshake if possible
+        blinkBeacon(COLOR_FAILURE, STATUS_BLINK_LENGTH_MS / 2);
       } else {
         // Display to the transmitter if the message was successfully received or not by blinking an indicator color
         uint32_t color = (status == STATUS_SUCCESS) ? COLOR_SUCCESS : COLOR_FAILURE;
-        setBeaconColor(color);
-        for (int i = 0; i < NUM_STATUS_BLINKS - 1; i++) {
-          setBeaconColor(COLOR_OFF);
-          delay(STATUS_BLINK_LENGTH_MS);
-          setBeaconColor(color);
-          delay(STATUS_BLINK_LENGTH_MS);
+        for (uint8_t blink = 0; blink < NUM_STATUS_BLINKS; blink++) {
+          blinkBeacon(COLOR_OFF, STATUS_BLINK_LENGTH_MS);
+          blinkBeacon(color, STATUS_BLINK_LENGTH_MS);
         }
-        delay(STATUS_BLINK_LENGTH_MS * 2);
+        delay(STATUS_BLINK_LENGTH_MS * 2);  // Make the last blink extra long for a "final" feel
       }
       setBeaconColor(COLOR_OFF);
 
