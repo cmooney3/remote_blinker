@@ -41,7 +41,7 @@ enum HandshakeRejectionReason { NOT_ENOUGH_PULSES, HIGH_STD_DEV };
 // The message receiver class.
 class LaserReceiver {
   public:
-    LaserReceiver();
+    LaserReceiver(void (*onHandshakeCallback)(), void (*onReceivingCallback)());
     Status ListenForMessages(uint16_t timeout);
 
   private:
@@ -70,6 +70,9 @@ class LaserReceiver {
     void Kmeans(CircularBuffer<uint16_t, RECV_BUFFER_SIZE>* buf, uint8_t k, uint16_t *means) const;
     void KmeansSelectStartingCentroids(uint8_t k, uint16_t* means) const;
     uint16_t KmeansDistance(uint16_t v1, uint16_t v2) const;
+
+    void (*onHandshakeCallback_)();
+    void (*onReceivingCallback_)();
 };
 
 };  // LaserMessaging namespace

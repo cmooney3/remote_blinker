@@ -2,7 +2,8 @@
 
 namespace LaserMessaging {
 
-LaserReceiver::LaserReceiver() {
+LaserReceiver::LaserReceiver(void (*onHandshakeCallback)(), void (*onReceivingCallback)()) :
+    onHandshakeCallback_(onHandshakeCallback), onReceivingCallback_(onReceivingCallback) {
   // Configure the GPIO as output that's connected to the "overflow" error LED
   pinMode(kOverflowErrorLEDPin, OUTPUT);
   digitalWrite(kOverflowErrorLEDPin, LOW);
@@ -47,7 +48,8 @@ Status LaserReceiver::ListenForMessages(uint16_t timeout) {
         Serial.print(F(" readings)\n\r"));
         Serial.println(F(FMAG("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
 
-//        setBeaconColor(COLOR_HANDSHAKE);
+        // Run the callback now, since we've found a handshake and are now tracking it.
+        onHandshakeCallback_();
         return Receive((uint16_t)bit_length, split);
       } else {
         Serial.print(F(FYEL(".")));
@@ -494,8 +496,8 @@ Status LaserReceiver::Receive(uint16_t bit_length, uint16_t split) {
     goto abort;
   }
 
-  // Turn on the beacon to indicate that the data itself is coming across now.
-//  setBeaconColor(COLOR_RECEIVING);
+  // Run the "onReceiving" callback now, because we've just seen the start of the data!
+  onReceivingCallback_();
 
   // Get the message length and confirm that it's checksum is correct.
   message_len = ReadInLength(bit_length, split);
