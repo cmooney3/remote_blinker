@@ -19,7 +19,7 @@ static const uint8_t kReadingPeriodUS = 150;
 // This shouldn't start with 0b01 or 0b10 since that pattern is found in the
 // handshake, and could cause misalignment issues.  Start with 0b00 or 0b11
 static const uint16_t kDataStartMagicNumber = 0x0F;
-static const uint16_t kHandshakeMinPulses = 8;
+static const uint8_t kHandshakeMinPulses = 8;
 
 static const uint8_t kHandshakeAnimationInterval = 23;
 
