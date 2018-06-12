@@ -55,7 +55,8 @@ CRGB leds[NUM_LEDS];
 #define STATUS_LOST_HANDSHAKE 1
 #define STATUS_BAD_LENGTH 2
 #define STATUS_BAD_CHECKSUM 3
-#define STATUS_SUCCESS 4
+#define STATUS_TIMEOUT 4
+#define STATUS_SUCCESS 5
 
 ////////////////////////////////////////////////////////////////////////////////
 // MACROS FOR TEXT FORMATTING (usefull while debugging, but not essential)
@@ -604,17 +605,13 @@ void blinkBeacon(CRGB color, uint16_t duration_ms) {
   wdt_reset();
 }
 
-bool ListenForMessages(uint16_t timeout) {
+uint8_t ListenForMessages(uint16_t timeout) {
   // Listen for incoming messages for timeout milliseconds.
   // If an incoming message is found, this function will receive the entire message
   // no matter how long it takes.  However, if no message is detected before the
   // timeout it will return.
-  // Return:  True --> A message (or at least a handshake was detected)  This means
-  //                   that the call may have taken longer then the timeout, however
-  //                   it does *not* necessarily mean that a message was successfully
-  //                   received -- you have to check the message for that.
-  //         False --> No hint of a message was detected as far as we can tell.  The
-  //                   call should have taken about timeout milliseconds.
+  // The return value is one of the STATUS_* macros and tells the calling function
+  // what happened.
   Serial.println(F(FWHT("----  New ListenForMessages() call ----")));
   Serial.print(F(FYEL("Listenining: ")));
   uint32_t start_time = millis();
@@ -636,21 +633,8 @@ bool ListenForMessages(uint16_t timeout) {
       // not directly as microseconds or something like that.
       int16_t bit_length = DetectHandshake(split);
 
-      // If a handshake was detected, begin listening for a message
-      if (bit_length <= 1) {
-        Serial.print(F(FYEL(".")));
-        //Serial.print(F("\treason: "));
-        //if (bit_length == -ENOTENOUGHPULSES) {
-        //    Serial.print(F("Not enough pulses detected."));
-        //} else if (bit_length = -EHIGHSTDDEV) {
-        //    Serial.print(F("Pulse lengths varied too much."));
-        //} else {
-        //    Serial.print(F("unknown ("));
-        //    Serial.print(bit_length);
-        //    Serial.print(F(")"));
-        //}
-        //Serial.print(F("\n\r"));
-      } else {
+      if (bit_length > 1) {
+        // If a handshake was detected, begin listening for a message
         Serial.print(F("\n\r\n\r"));
         Serial.println(F(FMAG("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
         Serial.print(F(FMAG("X Handshake detected!")));
@@ -660,56 +644,63 @@ bool ListenForMessages(uint16_t timeout) {
         Serial.println(F(FMAG("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
 
         setBeaconColor(COLOR_HANDSHAKE);
-        uint8_t status = Receive((uint16_t)bit_length, split);
-        if (status == STATUS_LOST_HANDSHAKE) {
-          // Only blink very briefly so it can reaquire the handshake if possible
-          blinkBeacon(COLOR_FAILURE, STATUS_BLINK_LENGTH_MS / 2);
-        } else {
-          // Display to the transmitter if the message was successfully received or not by blinking an indicator color
-          uint32_t color = (status == STATUS_SUCCESS) ? COLOR_SUCCESS : COLOR_FAILURE;
-          for (uint8_t blink = 0; blink < NUM_STATUS_BLINKS; blink++) {
-            blinkBeacon(COLOR_OFF, STATUS_BLINK_LENGTH_MS);
-            blinkBeacon(color, STATUS_BLINK_LENGTH_MS);
-          }
-          delay(STATUS_BLINK_LENGTH_MS * 2);  // Make the last blink extra long for a "final" feel
-        }
-        setBeaconColor(COLOR_OFF);
-        return true; // We saw a message (even if we failed to receive it), so return true.
+        return Receive((uint16_t)bit_length, split);
+      } else {
+        Serial.print(F(FYEL(".")));
       }
     }
   }
 
   Serial.print(F("\r\n"));
-  return false; // We timed out waiting for a message to arrive, so return False
+  return STATUS_TIMEOUT; // We timed out waiting for a message to arrive
 }
 
 void setup() {
-  // Initialize the Beacon's LEDS, and blink them to make a reboot visible.
-  FastLED.addLeds<APA102, LED_DATA_PIN, LED_CLOCK_PIN, BGR>(leds, NUM_LEDS);
-  setBeaconColor(COLOR_STARTUP);
-  delay(STARTUP_INDICATOR_TIME_MS);
-  setBeaconColor(COLOR_OFF);
-
   Serial.begin(BAUD_RATE);
 
   // Configure the GPIO as output that's connected to the "overflow" error LED
   pinMode(ERROR_LED_PIN, OUTPUT);
   digitalWrite(ERROR_LED_PIN, LOW);
 
-  // Set up the timer ISR to collect readings (for checking for handshakes, etc)
+  // Set up the timer ISR to collect readings from light sensor
   Timer1.initialize();
-  ClearBufferAndRestartCollection();
 
   // Start the watchdog timer to automatically reset on crashes
   wdt_enable(WDTO_2S);
   wdt_reset();
+
+  // Initialize the Beacon's LEDS, and blink them to make a reboot visible.
+  FastLED.addLeds<APA102, LED_DATA_PIN, LED_CLOCK_PIN, BGR>(leds, NUM_LEDS);
+  blinkBeacon(COLOR_STARTUP, STARTUP_INDICATOR_TIME_MS);
+  setBeaconColor(COLOR_OFF);
 }
 
 void loop() {
-  bool saw_a_message = ListenForMessages(1000);
-  if (saw_a_message) {
-    Serial.println(F("We saw a message on that one..."));
+  uint8_t status = ListenForMessages(1000);
+
+  Serial.print(F(FWHT("STATUS:\t")));
+  if (status == STATUS_TIMEOUT) {
+    Serial.println(F("STATUS_TIMEOUT"));
+  } else if (status == STATUS_LOST_HANDSHAKE) {
+    // Only blink very briefly so it can reaquire the handshake if possible
+    Serial.println(F("STATUS_LOST_HANDSHAKE"));
+    blinkBeacon(COLOR_FAILURE, STATUS_BLINK_LENGTH_MS / 2);
+    setBeaconColor(COLOR_OFF);
   } else {
-    Serial.println(F("We did *not* see a message on that one..."));
+    if (status == STATUS_SUCCESS) {
+      Serial.println(F("STATUS_SUCCESS"));
+    } else {
+      Serial.print(F("FAILED SOME KIND OF CHECKSUM ("));
+      Serial.print(status);
+      Serial.println(F(")"));
+    }
+    // Display to the transmitter if the message was successfully received or not by blinking an indicator color
+    uint32_t color = (status == STATUS_SUCCESS) ? COLOR_SUCCESS : COLOR_FAILURE;
+    for (uint8_t blink = 0; blink < NUM_STATUS_BLINKS; blink++) {
+      blinkBeacon(COLOR_OFF, STATUS_BLINK_LENGTH_MS);
+      blinkBeacon(color, STATUS_BLINK_LENGTH_MS);
+    }
+    delay(STATUS_BLINK_LENGTH_MS * 2);  // Make the last blink extra long for a "final" feel
+    setBeaconColor(COLOR_OFF);
   }
 }
