@@ -58,18 +58,16 @@ void loop() {
   uint8_t status = receiver->ListenForMessages(1000);
 
   Serial.print(F(FWHT("STATUS:\t")));
-  Serial.print(status);
-  Serial.println(F(")"));
   if (status == LaserMessaging::Status::TIMEOUT) {
-    Serial.println(F("STATUS_TIMEOUT"));
+    Serial.println(F("TIMEOUT"));
   } else if (status == LaserMessaging::Status::LOST_HANDSHAKE) {
     // Only blink very briefly so it can reaquire the handshake if possible
-    Serial.println(F("STATUS_LOST_HANDSHAKE"));
+    Serial.println(F("LOST_HANDSHAKE"));
     blinkBeacon(COLOR_FAILURE, STATUS_BLINK_LENGTH_MS / 2);
     setBeaconColor(COLOR_OFF);
   } else {
     if (status == LaserMessaging::Status::SUCCESS) {
-      Serial.println(F("STATUS_SUCCESS"));
+      Serial.println(F("SUCCESS"));
     } else {
       Serial.print(F("FAILED SOME KIND OF CHECKSUM ("));
       Serial.print(status);

@@ -4,14 +4,14 @@
 #include <limits.h>
 #include <TimerOne.h>
 
-#define LED_PIN 6
+#define LASER_PIN 6
 
 // Define the transmission rate.
 // Rate: 1 / (8 * BIT_LENGTH * ISR_PERIOD_US / 1000000)  (bytes-per-second)
 #define ISR_PERIOD_US 15
 #define BIT_LENGTH 90
 
-#define INTERMESSAGE_DELAY_MS 5000
+#define INTERMESSAGE_DELAY_MS 20000
 
 #define HANDSHAKE_LENGTH 4000
 #define MAX_DATA_LENGTH 500
@@ -49,14 +49,14 @@ void TimerHandler() {
   if (!cycles_remaining) {
     switch(transmission_stage) {
       case HANDSHAKE:
-        digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+        digitalWrite(LASER_PIN, !digitalRead(LASER_PIN));
         msg_handshake_bits_remaining--;
         if (msg_handshake_bits_remaining <= 0) {
           transmission_stage = TRANSMITTING;
         }
         break;
       case TRANSMITTING:
-        digitalWrite(LED_PIN, (((uint8_t*)(&msg))[msg_byte] >> (7 - msg_bit)) & 0x01);
+        digitalWrite(LASER_PIN, (((uint8_t*)(&msg))[msg_byte] >> (7 - msg_bit)) & 0x01);
         msg_bit++;
         if (msg_bit >= 8) {
           msg_bit = 0;
@@ -69,6 +69,7 @@ void TimerHandler() {
       default:
         Timer1.detachInterrupt();
         transmission_complete = true;
+        digitalWrite(LASER_PIN, LOW);
         break;
     };
     cycles_remaining = BIT_LENGTH;
@@ -106,8 +107,8 @@ void Send(const char* text) {
 }
 
 void setup() {
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
+  pinMode(LASER_PIN, OUTPUT);
+  digitalWrite(LASER_PIN, LOW);
 
   Timer1.initialize();
 }
