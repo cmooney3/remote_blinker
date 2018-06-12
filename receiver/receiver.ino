@@ -16,9 +16,9 @@
 #define LIGHT_SENSOR_PIN 0
 
 #define READING_PERIOD_US 150
-#define RECV_BUFFER_SIZE 300
+#define RECV_BUFFER_SIZE 250
 
-#define HANDSHAKE_MIN_PULSES 15
+#define HANDSHAKE_MIN_PULSES 10
 
 // This shouldn't start with 0b01 or 0b10 since that pattern is found in the
 // handshake, and could cause misalignment issues.  Start with 0b00 or 0b11
@@ -39,12 +39,20 @@ CRGB leds[NUM_LEDS];
 #define COLOR_SUCCESS CRGB::Green
 #define COLOR_FAILURE CRGB::Red
 
+#define NUM_STATUS_BLINKS 5
+#define STATUS_BLINK_LENGTH_MS 300
+
 ////////////////////////////////////////////////////////////////////////////////
 // ERROR CODES
 ////////////////////////////////////////////////////////////////////////////////
 #define ENOTENOUGHPULSES 1
 #define EHIGHSTDDEV 2
 #define EBADCHECKSUM 3
+
+#define STATUS_LOST_HANDSHAKE 1
+#define STATUS_BAD_LENGTH 2
+#define STATUS_BAD_CHECKSUM 3
+#define STATUS_SUCCESS 4
 
 ////////////////////////////////////////////////////////////////////////////////
 // MACROS FOR TEXT FORMATTING (usefull while debugging, but not essential)
@@ -246,29 +254,12 @@ int16_t DetectHandshake(uint16_t split) {
   }
   double std_dev = sqrt(deviations / (double)pulse_lengths.size());
 
-  //Serial.print(F(KMAG));
-  //for (int i = 0 ; i < pulse_lengths.size(); i++) {
-  //  Serial.print(pulse_lengths.get(i));
-  //  if (i != pulse_lengths.size() - 1) {
-  //    Serial.print(", ");
-  //  }
-  //}
-  //Serial.print("\n\r");
-  //Serial.print("avg: ");
-  //Serial.print(avg);
-  //Serial.print("\n\r");
-  //Serial.print("std dev: ");
-  //Serial.print(std_dev);
-  //Serial.print("\n\r");
-  //Serial.println("---");
-  //Serial.print(F(RST));
-
   // A high standard deviation means that the pulses were or varying widths,
   // and therefor, not a handshake.  They must be very precisely timed or
   // else we just assume it's random flickering -- plus we use that timing
   // for our bit length later, so if it's not reliable here, we'll likely
   // have transmission errors later on either way.
-  if (std_dev > avg * 0.10) {
+  if (std_dev > avg * 0.25) {
     return -EHIGHSTDDEV;
   }
 
@@ -304,7 +295,7 @@ uint16_t BlockForNextReading() {
   return reading;
 }
 
-void AlignBufferWithBitBoundaries(uint16_t split) {
+bool AlignBufferWithBitBoundaries(uint16_t bit_length, uint16_t split) {
   // Once we've identified a handshake and figured out what the split and bit
   // length are we need to make sure that the recieve buffer is aligned with
   // bit boundaries.  This essentially means we want the first value in the
@@ -314,9 +305,14 @@ void AlignBufferWithBitBoundaries(uint16_t split) {
   Serial.print(F("Aligning readings with bit boundaries in handshake..."));
   // TODO: This seems somewhat naive to just assume the first edge I see is
   // well aligned.  Perhaps if I looked for several edges I could do better?
-  uint16_t reading, converted_bit, value;
+  uint16_t reading_number = 0, reading, converted_bit, value;
   bool is_first_value = true;
   do {
+    // If we've been looking for a bit boundary for too long, give up
+    if (reading_number++ > bit_length * 2) {
+      return false;
+    }
+
     reading = BlockForNextReading();
     converted_bit = (reading >= split);
     if (is_first_value) {
@@ -329,6 +325,7 @@ void AlignBufferWithBitBoundaries(uint16_t split) {
   PutReadingBack(reading);
 
   Serial.print(F(FGRN("\tDONE\n\r")));
+  return true;
 }
 
 bool inline ConvertReading(uint16_t reading, uint16_t split) {
@@ -483,7 +480,6 @@ bool WaitForMagicNumber(uint16_t bit_length, uint16_t split) {
   // If that loop ends, that means we never found the magic number and somethig
   // is wrong.
   Serial.println(F(FRED("\tFAILURE, the handshake ended, but no magic number found!\n\r")));
-  setBeaconColor(COLOR_FAILURE);
   return false;
 }
 
@@ -517,27 +513,29 @@ uint16_t ReadInLength(uint16_t bit_length, uint16_t split) {
   }
 }
 
-void Receive(uint16_t bit_length, uint16_t split) {
+uint8_t Receive(uint16_t bit_length, uint16_t split) {
+  uint8_t status;
   uint8_t *data;
   uint16_t data_crc16, computed_data_crc16;
   int16_t message_len;
   ClearBufferAndRestartCollection();
 
   // Make sure our readings are aligned with the transmitter.
-  AlignBufferWithBitBoundaries(split);
+  bool successfully_aligned = AlignBufferWithBitBoundaries(bit_length, split);
 
   // Now wait until the data actually starts to arrive
-  if (!WaitForMagicNumber(bit_length, split)) {
-    setBeaconColor(COLOR_FAILURE);
-    //delay(RESPONSE_BLINK_TIME_MS);
+  if (!successfully_aligned || !WaitForMagicNumber(bit_length, split)) {
+    status = STATUS_LOST_HANDSHAKE;
     goto abort;
   }
+
+  // Turn on the beacon to indicate that the data itself is coming across now.
   setBeaconColor(COLOR_RECEIVING);
 
+  // Get the message length and confirm that it's checksum is correct.
   message_len = ReadInLength(bit_length, split);
   if (message_len < 0) {
-    setBeaconColor(COLOR_FAILURE);
-    //delay(RESPONSE_BLINK_TIME_MS);
+    status = STATUS_BAD_LENGTH;
     goto abort;
   }
 
@@ -568,9 +566,11 @@ void Receive(uint16_t bit_length, uint16_t split) {
   Serial.print(computed_data_crc16, HEX);
   Serial.print(F("\n\r"));
   if (computed_data_crc16 == data_crc16) {
+    status = STATUS_SUCCESS;
     Serial.print(F(FGRN("SUCCESS")));
     Serial.print(F(" -- data checksums match"));
   } else {
+    status = STATUS_BAD_CHECKSUM;
     Serial.print(F(FRED("FAILED")));
     Serial.print(F(" -- data checksums do not match!"));
   }
@@ -581,6 +581,8 @@ void Receive(uint16_t bit_length, uint16_t split) {
 abort:
   Serial.print(F("\n\r"));
   StopCollection();
+
+  return status;
 }
 
 void setBeaconColor(CRGB color) {
@@ -641,7 +643,22 @@ void loop() {
       Serial.println(F(FMAG("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
 
       setBeaconColor(COLOR_HANDSHAKE);
-      Receive((uint16_t)bit_length, split);
+      uint8_t status = Receive((uint16_t)bit_length, split);
+      if (status == STATUS_LOST_HANDSHAKE) {
+          setBeaconColor(COLOR_FAILURE);
+          delay(STATUS_BLINK_LENGTH_MS / 2);  // Only blink very briefly so it can reaquire the handshake if possible
+      } else {
+        // Display to the transmitter if the message was successfully received or not by blinking an indicator color
+        uint32_t color = (status == STATUS_SUCCESS) ? COLOR_SUCCESS : COLOR_FAILURE;
+        setBeaconColor(color);
+        for (int i = 0; i < NUM_STATUS_BLINKS - 1; i++) {
+          setBeaconColor(COLOR_OFF);
+          delay(STATUS_BLINK_LENGTH_MS);
+          setBeaconColor(color);
+          delay(STATUS_BLINK_LENGTH_MS);
+        }
+        delay(STATUS_BLINK_LENGTH_MS * 2);
+      }
       setBeaconColor(COLOR_OFF);
 
       Serial.print(F(FYEL("Listenining: ")));
