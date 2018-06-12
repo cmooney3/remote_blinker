@@ -14,7 +14,7 @@
 #define INTERMESSAGE_DELAY_MS 5000
 
 #define HANDSHAKE_LENGTH 4000
-#define MAX_DATA_LENGTH 900
+#define MAX_DATA_LENGTH 500
 
 #define LENGTH_BITS 16
 #define CRC16_BITS 16
@@ -115,6 +115,6 @@ void setup() {
 void loop() {
   Send("This is a test... Working?");
   delay(INTERMESSAGE_DELAY_MS);
-  Send("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis malesuada sapien eu mollis facilisis. Pellentesque vitae sodales nunc. Vestibulum eleifend convallis placerat. Morbi nec enim vel enim sollicitudin faucibus eu et orci. Donec a ornare justo. Vivamus ullamcorper vulputate justo, ac posuere massa finibus ac. Donec a sapien odio. Interdum et malesuada fames ac ante ipsum primis in faucibus. Ut sollicitudin quis orci ut volutpat. Aenean et sagittis libero. Aenean mollis convallis leo, id ultrices est scelerisque non.  Morbi euismod elementum malesuada. Maecenas pellentesque eu orci eu scelerisque. Ut sollicitudin quis orci ut volutpat. Aenean et sagittis libero. Aenean mollis convallis leo, id ultrices est scelerisque non.  Morbi euismod elementum malesuada. Maecenas pellentesque eu orci eu scelerisque.");
+  Send("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis malesuada sapien eu mollis facilisis. Pellentesque vitae sodales nunc. Vestibulum eleifend convallis placerat. Morbi nec enim vel enim sollicitudin faucibus eu et orci. Donec a ornare justo. Vivamus ullamcorper vulputate justo, ac posuere massa finibus ac. Donec a sapien odio. Interdum et malesuada fames ac ante ipsum primis in faucibus. Ut sollicitudin quis orci ut volutpat. ");
   delay(INTERMESSAGE_DELAY_MS);
 }
