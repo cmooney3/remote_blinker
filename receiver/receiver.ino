@@ -1,3 +1,4 @@
+#include <avr/wdt.h>
 #include <util/crc16.h>
 
 #include <CircularBuffer.h>
@@ -333,6 +334,8 @@ bool inline ConvertReading(uint16_t reading, uint16_t split) {
 }
 
 bool ReadNextFullBit(uint16_t bit_length, uint16_t split) {
+  wdt_reset();
+
   // Read in the right number of readings to cover one whole bit and see
   // what their average light level is.  Determine if it's a 1 or a 0 and
   // return that value.
@@ -603,9 +606,15 @@ void setup() {
 
   Timer1.initialize();
   ClearBufferAndRestartCollection();
+
+  // Start the watchdog timer to automatically reset on crashes
+  wdt_enable(WDTO_2S);
+  wdt_reset();
 }
 
 void loop() {
+  wdt_reset();
+
   if (recv_buf.isFull()) {
     // Stop the timer from adding more readings while we work
     StopCollection();
