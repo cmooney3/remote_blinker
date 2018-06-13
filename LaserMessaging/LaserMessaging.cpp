@@ -2,8 +2,12 @@
 
 namespace LaserMessaging {
 
-LaserReceiver::LaserReceiver(void (*onHandshakeCallback)(), void (*onReceivingCallback)()) :
-        onHandshakeCallback_(onHandshakeCallback), onReceivingCallback_(onReceivingCallback) {
+LaserReceiver::LaserReceiver() : onHandshakeCallback_(NULL), onReceivingCallback_(NULL) { }
+
+void LaserReceiver::Setup(void (*onHandshakeCallback)(), void (*onReceivingCallback)()) {
+  onHandshakeCallback_ = onHandshakeCallback;
+  onReceivingCallback_ = onReceivingCallback;
+
   // Configure the GPIO as output that's connected to the "overflow" error LED
   pinMode(kOverflowErrorLEDPin, OUTPUT);
   digitalWrite(kOverflowErrorLEDPin, LOW);

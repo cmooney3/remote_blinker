@@ -2,9 +2,7 @@
 #include <LaserMessaging.h>
 #include "FastLED.h"
 
-static void onHandshakeCallback();
-static void onReceivingCallback();
-LaserMessaging::LaserReceiver receiver(onHandshakeCallback, onReceivingCallback);
+LaserMessaging::LaserReceiver receiver;
 
 #define BAUD_RATE 115200
 
@@ -150,6 +148,7 @@ void setup() {
   Serial.begin(BAUD_RATE);
 
   // Set up the laser receiver code.
+  receiver.Setup(onHandshakeCallback, onReceivingCallback);
 
   // Initialize the Beacon's LEDS, and blink them to make a reboot visible.
   FastLED.addLeds<APA102, LED_DATA_PIN, LED_CLOCK_PIN, BGR>(leds, NUM_LEDS);

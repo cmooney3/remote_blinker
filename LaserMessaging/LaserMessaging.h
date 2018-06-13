@@ -42,7 +42,8 @@ enum HandshakeRejectionReason { NOT_ENOUGH_PULSES, HIGH_STD_DEV };
 // The message receiver class.
 class LaserReceiver {
   public:
-    LaserReceiver(void (*onHandshakeCallback)(), void (*onReceivingCallback)());
+    LaserReceiver();
+    void Setup(void (*onHandshakeCallback)(), void (*onReceivingCallback)());
     Status ListenForMessages(uint16_t timeout);
 
     // After ListenForMessages() receives a message you can get a pointer to it here
