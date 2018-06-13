@@ -2,7 +2,9 @@
 #include <LaserMessaging.h>
 #include "FastLED.h"
 
-LaserMessaging::LaserReceiver *receiver;
+static void onHandshakeCallback();
+static void onReceivingCallback();
+LaserMessaging::LaserReceiver receiver(onHandshakeCallback, onReceivingCallback);
 
 #define BAUD_RATE 115200
 
@@ -112,7 +114,7 @@ static void onReceivingCallback() {
 }
 
 static void ListenForMessagesWhileWaiting(uint16_t wait_time_ms) {
-  uint8_t status = receiver->ListenForMessages(wait_time_ms);
+  uint8_t status = receiver.ListenForMessages(wait_time_ms);
 
   Serial.print(F(FWHT("STATUS:\t")));
   if (status == LaserMessaging::Status::TIMEOUT) {
@@ -126,7 +128,7 @@ static void ListenForMessagesWhileWaiting(uint16_t wait_time_ms) {
     if (status == LaserMessaging::Status::SUCCESS) {
       Serial.println(F(FGRN("SUCCESS")));
       Serial.print(F("Message Received: \""));
-      Serial.print(receiver->GetMessage());
+      Serial.print(receiver.GetMessage());
       Serial.println(F("\""));
     } else {
       Serial.print(F(FRED("FAILED") " SOME KIND OF CHECKSUM ("));
@@ -148,7 +150,6 @@ void setup() {
   Serial.begin(BAUD_RATE);
 
   // Set up the laser receiver code.
-  receiver = new LaserMessaging::LaserReceiver(onHandshakeCallback, onReceivingCallback);
 
   // Initialize the Beacon's LEDS, and blink them to make a reboot visible.
   FastLED.addLeds<APA102, LED_DATA_PIN, LED_CLOCK_PIN, BGR>(leds, NUM_LEDS);
