@@ -1,3 +1,4 @@
+#include <avr/pgmspace.h>
 #include <LaserMessaging.h>
 #include "FastLED.h"
 
@@ -32,7 +33,7 @@ CRGB leds[NUM_LEDS];
 #define MORSE_INTERWORD_PAUSE_MS (MORSE_SPACING_UNIT_MS * 7)
 #define MORSE_INTERMESSAGE_PAUSE_MS 10000
 
-static char alpha[26][5] = {
+static const PROGMEM char alpha[26][5] = {
     {'.', '-', 'X', 'X', 'X'},   //A
     {'-', '.', '.', '.', 'X'}, //B
     {'-', '.', '-', '.', 'X'}, //C
@@ -61,7 +62,7 @@ static char alpha[26][5] = {
     {'-', '-', '.', '.', 'X'} //Z
 };
 
-static char num[10][5] = {
+static const PROGMEM char num[10][5] = {
     {'-', '-', '-', '-', '-'}, //0
     {'.', '-', '-', '-', '-'}, //1
     {'.', '.', '-', '-', '-'}, //2
@@ -74,7 +75,7 @@ static char num[10][5] = {
     {'-', '-', '-', '-', '.'} //9
 };
 
-static char* ConvertCharToMorse(char c) {
+static const char* ConvertCharToMorse(char c) {
   if ('A' <= c && c <= 'Z') {
     return alpha[c - 'A'];
   } else if ('a' <= c && c <= 'z') {
@@ -95,10 +96,6 @@ static void setBeaconColor(CRGB color) {
 static void blinkBeacon(CRGB color, uint16_t duration_ms) {
   setBeaconColor(color);
   delay(duration_ms);
-  Serial.print((color == (CRGB)COLOR_OFF) ? F("OFF") : F(FWHT("ON")));
-  Serial.print(F("\t"));
-  Serial.print(duration_ms);
-  Serial.print(F("ms\r\n"));
 }
 
 static void onHandshakeCallback() {
@@ -131,6 +128,12 @@ void loop() {
   curr_morse_char = &message[0];
 
   while (true) {
+    if (*curr_morse_char != 0x0) {
+      Serial.print(*curr_morse_char);
+    } else {
+      Serial.println();
+    }
+
     if (*curr_morse_char == 0x0) {
       curr_morse_char = &message[0];
       blinkBeacon(COLOR_OFF, MORSE_INTERMESSAGE_PAUSE_MS);
@@ -138,10 +141,10 @@ void loop() {
     } else if (*curr_morse_char == ' ') {
       blinkBeacon(COLOR_OFF, MORSE_INTERWORD_PAUSE_MS);
     } else {
-      char *morse = ConvertCharToMorse(*curr_morse_char);
-      while (*morse != 'X') {
-        blinkBeacon(COLOR_MORSE, (*morse == '.') ? MORSE_DOT_MS : MORSE_DASH_MS);
-        if (*(morse + 1) != 'X') {
+      const char *morse = ConvertCharToMorse(*curr_morse_char);
+      while (pgm_read_byte(morse) != 'X') {
+        blinkBeacon(COLOR_MORSE, (pgm_read_byte(morse) == '.') ? MORSE_DOT_MS : MORSE_DASH_MS);
+        if (pgm_read_byte(morse + 1) != 'X') {
           blinkBeacon(COLOR_OFF, MORSE_INTRACHARACTER_PAUSE_MS);
         }
         morse++;

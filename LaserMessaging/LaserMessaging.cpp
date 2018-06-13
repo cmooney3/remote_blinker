@@ -232,7 +232,7 @@ int16_t LaserReceiver::DetectHandshake(uint16_t split) {
   if (pulse_lengths.size() <= kHandshakeMinPulses) {
     return -HandshakeRejectionReason::NOT_ENOUGH_PULSES;
   }
-  pulse_lengths.remove(0);
+  pulse_lengths.pop();
   pulse_lengths.remove(pulse_lengths.size() - 1);
 
   // Next, compute some statistics on the pulse lengths to see if they seem
