@@ -3,7 +3,7 @@
 namespace LaserMessaging {
 
 LaserReceiver::LaserReceiver(void (*onHandshakeCallback)(), void (*onReceivingCallback)()) :
-    onHandshakeCallback_(onHandshakeCallback), onReceivingCallback_(onReceivingCallback) {
+        onHandshakeCallback_(onHandshakeCallback), onReceivingCallback_(onReceivingCallback) {
   // Configure the GPIO as output that's connected to the "overflow" error LED
   pinMode(kOverflowErrorLEDPin, OUTPUT);
   digitalWrite(kOverflowErrorLEDPin, LOW);
@@ -49,7 +49,9 @@ Status LaserReceiver::ListenForMessages(uint16_t timeout) {
         Serial.println(F(FMAG("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")));
 
         // Run the callback now, since we've found a handshake and are now tracking it.
-        onHandshakeCallback_();
+        if (onHandshakeCallback_) {
+          onHandshakeCallback_();
+        }
         return Receive((uint16_t)bit_length, split);
       } else {
         Serial.print(F(FYEL(".")));
@@ -61,6 +63,9 @@ Status LaserReceiver::ListenForMessages(uint16_t timeout) {
   return Status::TIMEOUT; // We timed out waiting for a message to arrive
 }
 
+const char* LaserReceiver::GetMessage() const {
+  return message_;
+}
 
 void LaserReceiver::StopCollection() {
   Timer1.detachInterrupt();
@@ -482,8 +487,7 @@ uint16_t LaserReceiver::ReadInLength(uint16_t bit_length, uint16_t split) {
 
 Status LaserReceiver::Receive(uint16_t bit_length, uint16_t split) {
   Status status;
-  uint8_t *data;
-  uint16_t data_crc16, computed_data_crc16;
+  uint16_t message_crc16, computed_message_crc16;
   int16_t message_len;
   ClearBufferAndRestartCollection();
 
@@ -497,7 +501,9 @@ Status LaserReceiver::Receive(uint16_t bit_length, uint16_t split) {
   }
 
   // Run the "onReceiving" callback now, because we've just seen the start of the data!
-  onReceivingCallback_();
+  if (onReceivingCallback_) {
+    onReceivingCallback_();
+  }
 
   // Get the message length and confirm that it's checksum is correct.
   message_len = ReadInLength(bit_length, split);
@@ -506,44 +512,43 @@ Status LaserReceiver::Receive(uint16_t bit_length, uint16_t split) {
     goto abort;
   }
 
-  // Read in the checksum for the data (CRC16) and confirm it's OK
-  data_crc16 = Read16BitInt(bit_length, split);
-  Serial.print(F("Received CRC16 for data = 0x"));
-  Serial.print(data_crc16, HEX);
+  // Read in the checksum for the message (CRC16) and confirm it's OK
+  message_crc16 = Read16BitInt(bit_length, split);
+  Serial.print(F("Received CRC16 for message = 0x"));
+  Serial.print(message_crc16, HEX);
   Serial.print(F("\n\r"));
 
   // Collect the actual bits themselves.
-  data = (uint8_t*)malloc(sizeof(uint8_t) * message_len);
   Serial.print(F(KGRN "Receiving "));
   Serial.print(message_len);
   Serial.print(F(" bytes:" RST));
   Serial.print(F(KCYN KBOLD " \""));
-  for (uint16_t i = 0; i < message_len; i++) {
-    data[i] = ReadNextFullByte(bit_length, split);
-    Serial.print((char)data[i]);
+  for (uint16_t i = 0; i < message_len && i < MAX_MESSAGE_LENGTH; i++) {
+    message_[i] = ReadNextFullByte(bit_length, split);
+    Serial.print(message_[i]);
   }
   Serial.print(F("\"" RST "\n\r"));
+  // Make sure there's a null terminator
+  message_[(message_len < MAX_MESSAGE_LENGTH) ? message_len : MAX_MESSAGE_LENGTH] = 0x0;
 
-  // Confirm that the data's checksum matches the one we received
-  computed_data_crc16 = 0;
+  // Confirm that the message's checksum matches the one we received
+  computed_message_crc16 = 0;
   for (int i = 0; i < message_len; i++) {
-    computed_data_crc16 = _crc16_update(computed_data_crc16, data[i]);
+    computed_message_crc16 = _crc16_update(computed_message_crc16, message_[i]);
   }
-  Serial.print(F("Computed CRC16 for data = 0x"));
-  Serial.print(computed_data_crc16, HEX);
+  Serial.print(F("Computed CRC16 for message = 0x"));
+  Serial.print(computed_message_crc16, HEX);
   Serial.print(F("\n\r"));
-  if (computed_data_crc16 == data_crc16) {
+  if (computed_message_crc16 == message_crc16) {
     status = Status::SUCCESS;
     Serial.print(F(FGRN("SUCCESS")));
-    Serial.print(F(" -- data checksums match"));
+    Serial.print(F(" -- message checksums match"));
   } else {
     status = Status::BAD_CHECKSUM;
     Serial.print(F(FRED("FAILED")));
-    Serial.print(F(" -- data checksums do not match!"));
+    Serial.print(F(" -- message checksums do not match!"));
   }
   Serial.print(F("\n\r"));
-
-  free(data);
 
 abort:
   Serial.print(F("\n\r"));

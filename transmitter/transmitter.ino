@@ -14,7 +14,7 @@
 #define INTERMESSAGE_DELAY_MS 20000
 
 #define HANDSHAKE_LENGTH 4000
-#define MAX_DATA_LENGTH 500
+#define MAX_DATA_LENGTH 400
 
 #define LENGTH_BITS 16
 #define CRC16_BITS 16
@@ -83,7 +83,7 @@ void Send(const char* text) {
   msg.data_length = strlen(text);
   msg.length_csum = _crc16_update(0, (msg.data_length >> 8) & 0xFF);
   msg.length_csum = _crc16_update(msg.length_csum, msg.data_length & 0xFF);
-  strcpy((char*)msg.data, text);
+  strncpy((char*)msg.data, text, MAX_DATA_LENGTH);
   msg.data_csum = 0;
   for (uint16_t i = 0; i < msg.data_length; i++) {
     msg.data_csum = _crc16_update(msg.data_csum, msg.data[i]);
@@ -116,6 +116,6 @@ void setup() {
 void loop() {
   Send("This is a test... Working?");
   delay(INTERMESSAGE_DELAY_MS);
-  Send("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis malesuada sapien eu mollis facilisis. Pellentesque vitae sodales nunc. Vestibulum eleifend convallis placerat. Morbi nec enim vel enim sollicitudin faucibus eu et orci. Donec a ornare justo. Vivamus ullamcorper vulputate justo, ac posuere massa finibus ac. Donec a sapien odio. Interdum et malesuada fames ac ante ipsum primis in faucibus. Ut sollicitudin quis orci ut volutpat. ");
+  Send("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis malesuada sapien eu mollis facilisis. Pellentesque vitae sodales nunc. Vestibulum eleifend convallis placerat. Morbi nec enim vel enim sollicitudin faucibus eu et orci. Donec a ornare justo. Vivamus ullamcorper vulputate justo, ac posuere massa finibus ac. Donec a sapien odio. Interdum et malesuada fames ac ante ipsum primis in faucibus");
   delay(INTERMESSAGE_DELAY_MS);
 }

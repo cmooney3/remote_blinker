@@ -9,6 +9,7 @@
 #include "colors.h"
 
 #define RECV_BUFFER_SIZE 200
+#define MAX_MESSAGE_LENGTH 400
 
 namespace LaserMessaging {
 
@@ -44,6 +45,9 @@ class LaserReceiver {
     LaserReceiver(void (*onHandshakeCallback)(), void (*onReceivingCallback)());
     Status ListenForMessages(uint16_t timeout);
 
+    // After ListenForMessages() receives a message you can get a pointer to it here
+    const char* GetMessage() const;
+
   private:
     // These functions offer high-level functionality to navigate the protocol
     int16_t DetectHandshake(uint16_t split);
@@ -71,6 +75,7 @@ class LaserReceiver {
     void KmeansSelectStartingCentroids(uint8_t k, uint16_t* means) const;
     uint16_t KmeansDistance(uint16_t v1, uint16_t v2) const;
 
+    char message_[MAX_MESSAGE_LENGTH + 1];  // One extra byte to guarantee room for a NULL terminator
     void (*onHandshakeCallback_)();
     void (*onReceivingCallback_)();
 };
