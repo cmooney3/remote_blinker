@@ -124,9 +124,12 @@ static void ListenForMessagesWhileWaiting(uint16_t wait_time_ms) {
     setBeaconColor(COLOR_OFF);
   } else {
     if (status == LaserMessaging::Status::SUCCESS) {
-      Serial.println(F("SUCCESS"));
+      Serial.println(F(FGRN("SUCCESS")));
+      Serial.print(F("Message Received: \""));
+      Serial.print(receiver->GetMessage());
+      Serial.println(F("\""));
     } else {
-      Serial.print(F("FAILED SOME KIND OF CHECKSUM ("));
+      Serial.print(F(FRED("FAILED") " SOME KIND OF CHECKSUM ("));
       Serial.print(status);
       Serial.println(F(")"));
     }
