@@ -8,7 +8,7 @@
 
 #include "colors.h"
 
-#define RECV_BUFFER_SIZE 250
+#define RECV_BUFFER_SIZE 200
 
 namespace LaserMessaging {
 

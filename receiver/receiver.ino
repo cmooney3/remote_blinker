@@ -34,32 +34,32 @@ CRGB leds[NUM_LEDS];
 #define MORSE_INTERMESSAGE_PAUSE_MS 10000
 
 static const PROGMEM char alpha[26][5] = {
-    {'.', '-', 'X', 'X', 'X'},   //A
+    {'.', '-', 'X', 'X', 'X'}, //A
     {'-', '.', '.', '.', 'X'}, //B
     {'-', '.', '-', '.', 'X'}, //C
-    {'-', '.', '.', 'X', 'X'},  //D
-    {'.', 'X', 'X', 'X', 'X'},    //E
+    {'-', '.', '.', 'X', 'X'}, //D
+    {'.', 'X', 'X', 'X', 'X'}, //E
     {'.', '.', '-', '.', 'X'}, //F
-    {'-', '-', '.', 'X', 'X'},  //G
+    {'-', '-', '.', 'X', 'X'}, //G
     {'.', '.', '.', '.', 'X'}, //H
-    {'.', '.', 'X', 'X', 'X'},   //I
+    {'.', '.', 'X', 'X', 'X'}, //I
     {'.', '-', '-', '-', 'X'}, //J
-    {'-', '.', '-', 'X', 'X'},  //K
+    {'-', '.', '-', 'X', 'X'}, //K
     {'.', '-', '.', '.', 'X'}, //L
-    {'-', '-', 'X', 'X', 'X'},   //M
-    {'-', '.', 'X', 'X', 'X'},   //N
-    {'-', '-', '-', 'X', 'X'},  //O
+    {'-', '-', 'X', 'X', 'X'}, //M
+    {'-', '.', 'X', 'X', 'X'}, //N
+    {'-', '-', '-', 'X', 'X'}, //O
     {'.', '-', '-', '.', 'X'}, //P
     {'-', '-', '.', '-', 'X'}, //Q
-    {'.', '-', '.', 'X', 'X'},  //R
-    {'.', '.', '.', 'X', 'X'},  //S
-    {'-', 'X', 'X', 'X', 'X'},    //T
-    {'.', '.', '-', 'X', 'X'},  //U
+    {'.', '-', '.', 'X', 'X'}, //R
+    {'.', '.', '.', 'X', 'X'}, //S
+    {'-', 'X', 'X', 'X', 'X'}, //T
+    {'.', '.', '-', 'X', 'X'}, //U
     {'.', '.', '.', '-', 'X'}, //V
-    {'.', '-', '-', 'X', 'X'},  //W
+    {'.', '-', '-', 'X', 'X'}, //W
     {'-', '.', '.', '-', 'X'}, //X
     {'-', '.', '-', '-', 'X'}, //Y
-    {'-', '-', '.', '.', 'X'} //Z
+    {'-', '-', '.', '.', 'X'}  //Z
 };
 
 static const PROGMEM char num[10][5] = {
@@ -72,7 +72,7 @@ static const PROGMEM char num[10][5] = {
     {'-', '.', '.', '.', '.'}, //6
     {'-', '-', '.', '.', '.'}, //7
     {'-', '-', '-', '.', '.'}, //8
-    {'-', '-', '-', '-', '.'} //9
+    {'-', '-', '-', '-', '.'}  //9
 };
 
 static const char* ConvertCharToMorse(char c) {
@@ -95,6 +95,11 @@ static void setBeaconColor(CRGB color) {
 
 static void blinkBeacon(CRGB color, uint16_t duration_ms) {
   setBeaconColor(color);
+  ListenForMessagesWhileWaiting(duration_ms);
+}
+
+static void blinkBeaconWithoutListening(CRGB color, uint16_t duration_ms) {
+  setBeaconColor(color);
   delay(duration_ms);
 }
 
@@ -106,6 +111,35 @@ static void onReceivingCallback() {
   setBeaconColor(COLOR_RECEIVING);
 }
 
+static void ListenForMessagesWhileWaiting(uint16_t wait_time_ms) {
+  uint8_t status = receiver->ListenForMessages(wait_time_ms);
+
+  Serial.print(F(FWHT("STATUS:\t")));
+  if (status == LaserMessaging::Status::TIMEOUT) {
+    Serial.println(F("TIMEOUT"));
+  } else if (status == LaserMessaging::Status::LOST_HANDSHAKE) {
+    // Only blink very briefly so it can reaquire the handshake if possible
+    Serial.println(F("LOST_HANDSHAKE"));
+    blinkBeaconWithoutListening(COLOR_FAILURE, STATUS_BLINK_LENGTH_MS / 2);
+    setBeaconColor(COLOR_OFF);
+  } else {
+    if (status == LaserMessaging::Status::SUCCESS) {
+      Serial.println(F("SUCCESS"));
+    } else {
+      Serial.print(F("FAILED SOME KIND OF CHECKSUM ("));
+      Serial.print(status);
+      Serial.println(F(")"));
+    }
+    // Display to the transmitter if the message was successfully received or not by blinking an indicator color
+    uint32_t color = (status == LaserMessaging::Status::SUCCESS) ? COLOR_SUCCESS : COLOR_FAILURE;
+    for (uint8_t blink = 0; blink < NUM_STATUS_BLINKS; blink++) {
+      blinkBeaconWithoutListening(COLOR_OFF, STATUS_BLINK_LENGTH_MS);
+      blinkBeaconWithoutListening(color, STATUS_BLINK_LENGTH_MS);
+    }
+    delay(STATUS_BLINK_LENGTH_MS * 2);  // Make the last blink extra long for a "final" feel
+    setBeaconColor(COLOR_OFF);
+  }
+}
 
 void setup() {
   Serial.begin(BAUD_RATE);
@@ -158,32 +192,4 @@ void loop() {
 
     curr_morse_char++;
   }
-
-//  uint8_t status = receiver->ListenForMessages(1000);
-//
-//  Serial.print(F(FWHT("STATUS:\t")));
-//  if (status == LaserMessaging::Status::TIMEOUT) {
-//    Serial.println(F("TIMEOUT"));
-//  } else if (status == LaserMessaging::Status::LOST_HANDSHAKE) {
-//    // Only blink very briefly so it can reaquire the handshake if possible
-//    Serial.println(F("LOST_HANDSHAKE"));
-//    blinkBeacon(COLOR_FAILURE, STATUS_BLINK_LENGTH_MS / 2);
-//    setBeaconColor(COLOR_OFF);
-//  } else {
-//    if (status == LaserMessaging::Status::SUCCESS) {
-//      Serial.println(F("SUCCESS"));
-//    } else {
-//      Serial.print(F("FAILED SOME KIND OF CHECKSUM ("));
-//      Serial.print(status);
-//      Serial.println(F(")"));
-//    }
-//    // Display to the transmitter if the message was successfully received or not by blinking an indicator color
-//    uint32_t color = (status == LaserMessaging::Status::SUCCESS) ? COLOR_SUCCESS : COLOR_FAILURE;
-//    for (uint8_t blink = 0; blink < NUM_STATUS_BLINKS; blink++) {
-//      blinkBeacon(COLOR_OFF, STATUS_BLINK_LENGTH_MS);
-//      blinkBeacon(color, STATUS_BLINK_LENGTH_MS);
-//    }
-//    delay(STATUS_BLINK_LENGTH_MS * 2);  // Make the last blink extra long for a "final" feel
-//    setBeaconColor(COLOR_OFF);
-//  }
 }
