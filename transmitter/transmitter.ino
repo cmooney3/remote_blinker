@@ -11,10 +11,10 @@
 #define ISR_PERIOD_US 15
 #define BIT_LENGTH 90
 
-#define INTERMESSAGE_DELAY_MS 20000
+#define INTERMESSAGE_DELAY_MS 60000
 
 #define HANDSHAKE_LENGTH 4000
-#define MAX_DATA_LENGTH 400
+#define MAX_DATA_LENGTH 100
 
 #define LENGTH_BITS 16
 #define CRC16_BITS 16
@@ -114,8 +114,12 @@ void setup() {
 }
 
 void loop() {
-  Send("This is a test... Working?");
+  Send("charlie");
   delay(INTERMESSAGE_DELAY_MS);
-  Send("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis malesuada sapien eu mollis facilisis. Pellentesque vitae sodales nunc. Vestibulum eleifend convallis placerat. Morbi nec enim vel enim sollicitudin faucibus eu et orci. Donec a ornare justo. Vivamus ullamcorper vulputate justo, ac posuere massa finibus ac. Donec a sapien odio. Interdum et malesuada fames ac ante ipsum primis in faucibus");
+  Send("ashley");
+  delay(INTERMESSAGE_DELAY_MS);
+  Send("john");
+  delay(INTERMESSAGE_DELAY_MS);
+  Send("emma");
   delay(INTERMESSAGE_DELAY_MS);
 }

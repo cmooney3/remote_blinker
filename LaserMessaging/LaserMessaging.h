@@ -9,7 +9,7 @@
 #include "colors.h"
 
 #define RECV_BUFFER_SIZE 200
-#define MAX_MESSAGE_LENGTH 400
+#define MAX_MESSAGE_LENGTH 100
 
 namespace LaserMessaging {
 
@@ -20,7 +20,7 @@ static const uint8_t kReadingPeriodUS = 150;
 // This shouldn't start with 0b01 or 0b10 since that pattern is found in the
 // handshake, and could cause misalignment issues.  Start with 0b00 or 0b11
 static const uint16_t kDataStartMagicNumber = 0x0F;
-static const uint8_t kHandshakeMinPulses = 8;
+static const uint8_t kHandshakeMinPulses = 12;
 
 static const uint8_t kHandshakeAnimationInterval = 23;
 
@@ -43,10 +43,20 @@ enum HandshakeRejectionReason { NOT_ENOUGH_PULSES, HIGH_STD_DEV };
 class LaserReceiver {
   public:
     LaserReceiver();
+
+    // This Setup function must be run in the setup() part of your sketch, before you
+    // try to listen for any messages.  This attaches your callbacks (if any, NULL
+    // is just fine) and configures the GPIOs/etc.
     void Setup(void (*onHandshakeCallback)(), void (*onReceivingCallback)());
+
+    // Running this will block for up to "timeout" milliseconds while listening for an
+    // incoming message.  If no message has been heard in that time, it'll return.
+    // However, if a message is received the timeout will be ignored, and the function
+    // will only return once it has either lost the signal it was tracking or has
+    // fully read in the message.
     Status ListenForMessages(uint16_t timeout);
 
-    // After ListenForMessages() receives a message you can get a pointer to it here
+    // After ListenForMessages() receives a message you can get a pointer to it here.
     const char* GetMessage() const;
 
   private:

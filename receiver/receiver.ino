@@ -1,8 +1,13 @@
 #include <avr/pgmspace.h>
+#include <EEPROM.h>
 #include <LaserMessaging.h>
 #include "FastLED.h"
 
 LaserMessaging::LaserReceiver receiver;
+
+static char morse_message[MAX_MESSAGE_LENGTH] = {'n', 'o', ' ', 'm', 'e', 's', 's', 'a', 'g', 'e'};
+char* curr_morse_char;
+CRGB morse_color;
 
 #define BAUD_RATE 115200
 
@@ -11,6 +16,12 @@ CRGB leds[NUM_LEDS];
 #define LED_DATA_PIN 8
 #define LED_CLOCK_PIN 9
 
+// EEPROM addresses/values for various values
+#define MAGIC_NUMBER_ADDR 0
+#define MAGIC_NUMBER 0xED
+#define CONTENTS_ADDR 2
+
+// How long the initial beacon blink is after a reboot
 #define STARTUP_INDICATOR_TIME_MS 750
 
 #define COLOR_OFF CRGB::Black
@@ -19,7 +30,6 @@ CRGB leds[NUM_LEDS];
 #define COLOR_RECEIVING CRGB::Chartreuse
 #define COLOR_SUCCESS CRGB::Green
 #define COLOR_FAILURE CRGB::Red
-#define COLOR_MORSE CRGB::Cyan
 
 #define NUM_STATUS_BLINKS 5
 #define STATUS_BLINK_LENGTH_MS 300
@@ -86,6 +96,35 @@ static const char* ConvertCharToMorse(char c) {
   return NULL;
 }
 
+void saveNewMessageToEEPROM(char const *message) {
+  // Write a magic number in a known location to let the system know this is a valid message
+  EEPROM.write(MAGIC_NUMBER_ADDR, MAGIC_NUMBER);
+
+  // Store the actual message charcter by character after that
+  uint16_t length = strlen(message);
+  for (uint16_t i = 0; i <= length; i++) {  // <= copies the null terminator over as well
+    EEPROM.write(CONTENTS_ADDR + i, message[i]);
+  }
+}
+
+// Check through the EEPROM to see if there's a stored message.  If so, read it into the
+// supplied message buffer and return true.  Otherwise return false to indicate that no
+// message can be found in eeprom.
+bool restoreMessageFromEEPROM(char *message) {
+  bool is_valid = (EEPROM.read(MAGIC_NUMBER_ADDR) == MAGIC_NUMBER);
+  if (!is_valid) {
+    return false;
+  } else {
+    uint16_t pos = 0;
+    do {
+      message[pos] = EEPROM.read(CONTENTS_ADDR + pos);
+      pos++;
+    } while (message[pos - 1] != 0x0);
+    return true;
+  }
+}
+
+
 static void setBeaconColor(CRGB color) {
   for (uint16_t i = 0; i < NUM_LEDS; i++) {
     leds[i] = color;
@@ -128,6 +167,9 @@ static void ListenForMessagesWhileWaiting(uint16_t wait_time_ms) {
       Serial.print(F("Message Received: \""));
       Serial.print(receiver.GetMessage());
       Serial.println(F("\""));
+      saveNewMessageToEEPROM(receiver.GetMessage());
+      restoreMessageFromEEPROM(morse_message);
+      restartMorseMessage();
     } else {
       Serial.print(F(FRED("FAILED") " SOME KIND OF CHECKSUM ("));
       Serial.print(status);
@@ -156,13 +198,16 @@ void setup() {
   setBeaconColor(COLOR_OFF);
 }
 
+void restartMorseMessage() {
+  curr_morse_char = &morse_message[0];
+  morse_color = CHSV(random8(),255,255);
+}
 
 void loop() {
-  char* curr_morse_char;
-  char message[21] = {'h', 'e', 'l', 'l', 'o', ' ', 't', 'h', 'i', 's', ' ', 'i', 's', ' ', 'a', ' ', 't', 'e', 's', 't', 0x0};
+  restoreMessageFromEEPROM(morse_message);
 
   // Get the Morse code message set up
-  curr_morse_char = &message[0];
+  restartMorseMessage();
 
   while (true) {
     if (*curr_morse_char != 0x0) {
@@ -172,7 +217,7 @@ void loop() {
     }
 
     if (*curr_morse_char == 0x0) {
-      curr_morse_char = &message[0];
+      restartMorseMessage();
       blinkBeacon(COLOR_OFF, MORSE_INTERMESSAGE_PAUSE_MS);
       continue;
     } else if (*curr_morse_char == ' ') {
@@ -180,7 +225,7 @@ void loop() {
     } else {
       const char *morse = ConvertCharToMorse(*curr_morse_char);
       while (pgm_read_byte(morse) != 'X') {
-        blinkBeacon(COLOR_MORSE, (pgm_read_byte(morse) == '.') ? MORSE_DOT_MS : MORSE_DASH_MS);
+        blinkBeacon(morse_color, (pgm_read_byte(morse) == '.') ? MORSE_DOT_MS : MORSE_DASH_MS);
         if (pgm_read_byte(morse + 1) != 'X') {
           blinkBeacon(COLOR_OFF, MORSE_INTRACHARACTER_PAUSE_MS);
         }
