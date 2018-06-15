@@ -5,7 +5,7 @@
 
 LaserMessaging::LaserReceiver receiver;
 
-static char morse_message[MAX_MESSAGE_LENGTH] = {'n', 'o', ' ', 'm', 'e', 's', 's', 'a', 'g', 'e'};
+static char morse_message[MAX_MESSAGE_LENGTH];
 char* curr_morse_char;
 CRGB morse_color;
 
@@ -113,6 +113,7 @@ void saveNewMessageToEEPROM(char const *message) {
 bool restoreMessageFromEEPROM(char *message) {
   bool is_valid = (EEPROM.read(MAGIC_NUMBER_ADDR) == MAGIC_NUMBER);
   if (!is_valid) {
+    strcpy(message, "no message");
     return false;
   } else {
     uint16_t pos = 0;
@@ -125,20 +126,39 @@ bool restoreMessageFromEEPROM(char *message) {
 }
 
 
-static void setBeaconColor(CRGB color) {
+#define FADE_STEP 4
+static void fadeBeaconColor(CRGB new_color) {
+  CRGB old_color = leds[0];
+
+  for (uint16_t i = FADE_STEP; i <= 256 - FADE_STEP; i += FADE_STEP) {
+    CRGB blended_color = blend(old_color, new_color, (uint8_t)(i & 0xFF));
+    for (uint16_t i = 0; i < NUM_LEDS; i++) {
+      leds[i] = blended_color;
+    }
+    FastLED.show();
+    delay(1);
+  }
   for (uint16_t i = 0; i < NUM_LEDS; i++) {
-    leds[i] = color;
+    leds[i] = new_color;
   }
   FastLED.show();
 }
 
-static void blinkBeacon(CRGB color, uint16_t duration_ms) {
-  setBeaconColor(color);
-  ListenForMessagesWhileWaiting(duration_ms);
+static void setBeaconColor(CRGB new_color) {
+  for (uint16_t i = 0; i < NUM_LEDS; i++) {
+    leds[i] = new_color;
+  }
+  FastLED.show();
+}
+
+static bool blinkBeacon(CRGB color, uint16_t duration_ms) {
+  // Returns true if anything interesting happened during the timeout
+  fadeBeaconColor(color);
+  return ListenForMessagesWhileWaiting(duration_ms);
 }
 
 static void blinkBeaconWithoutListening(CRGB color, uint16_t duration_ms) {
-  setBeaconColor(color);
+  fadeBeaconColor(color);
   delay(duration_ms);
 }
 
@@ -150,17 +170,20 @@ static void onReceivingCallback() {
   setBeaconColor(COLOR_RECEIVING);
 }
 
-static void ListenForMessagesWhileWaiting(uint16_t wait_time_ms) {
+static bool ListenForMessagesWhileWaiting(uint16_t wait_time_ms) {
+  // returns true if it heard any message at all, false otherwise.
   uint8_t status = receiver.ListenForMessages(wait_time_ms);
 
   Serial.print(F(FWHT("STATUS:\t")));
   if (status == LaserMessaging::Status::TIMEOUT) {
     Serial.println(F("TIMEOUT"));
+    return false;
   } else if (status == LaserMessaging::Status::LOST_HANDSHAKE) {
     // Only blink very briefly so it can reaquire the handshake if possible
     Serial.println(F("LOST_HANDSHAKE"));
     blinkBeaconWithoutListening(COLOR_FAILURE, STATUS_BLINK_LENGTH_MS / 2);
     setBeaconColor(COLOR_OFF);
+    return true;
   } else {
     if (status == LaserMessaging::Status::SUCCESS) {
       Serial.println(F(FGRN("SUCCESS")));
@@ -183,6 +206,7 @@ static void ListenForMessagesWhileWaiting(uint16_t wait_time_ms) {
     }
     delay(STATUS_BLINK_LENGTH_MS * 2);  // Make the last blink extra long for a "final" feel
     setBeaconColor(COLOR_OFF);
+    return true;
   }
 }
 
@@ -216,25 +240,45 @@ void loop() {
       Serial.println();
     }
 
+    // Insert a pause before each new message.
+    if (curr_morse_char == morse_message) {
+      if (blinkBeacon(COLOR_OFF, MORSE_INTERMESSAGE_PAUSE_MS)) {
+        continue;
+      }
+    }
+
     if (*curr_morse_char == 0x0) {
       restartMorseMessage();
-      blinkBeacon(COLOR_OFF, MORSE_INTERMESSAGE_PAUSE_MS);
       continue;
     } else if (*curr_morse_char == ' ') {
-      blinkBeacon(COLOR_OFF, MORSE_INTERWORD_PAUSE_MS);
+      if (blinkBeacon(COLOR_OFF, MORSE_INTERWORD_PAUSE_MS)) {
+        continue;
+      }
     } else {
       const char *morse = ConvertCharToMorse(*curr_morse_char);
+      bool interrupted = false;
       while (pgm_read_byte(morse) != 'X') {
-        blinkBeacon(morse_color, (pgm_read_byte(morse) == '.') ? MORSE_DOT_MS : MORSE_DASH_MS);
+        interrupted = blinkBeacon(morse_color, (pgm_read_byte(morse) == '.') ? MORSE_DOT_MS : MORSE_DASH_MS);
+        if (interrupted) {
+          break;
+        }
         if (pgm_read_byte(morse + 1) != 'X') {
-          blinkBeacon(COLOR_OFF, MORSE_INTRACHARACTER_PAUSE_MS);
+          interrupted = blinkBeacon(COLOR_OFF, MORSE_INTRACHARACTER_PAUSE_MS);
+          if (interrupted) {
+            break;
+          }
         }
         morse++;
+      }
+      if (interrupted) {
+        break;
       }
 
       char next_char = *(curr_morse_char + 1);
       if (next_char != 0x0 && next_char != ' ') {
-        blinkBeacon(COLOR_OFF, MORSE_INTERCHARACTER_PAUSE_MS);
+        if (blinkBeacon(COLOR_OFF, MORSE_INTERCHARACTER_PAUSE_MS)) {
+          continue;
+        }
       }
     }
 
